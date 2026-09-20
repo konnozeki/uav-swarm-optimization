@@ -96,6 +96,57 @@ def uncovered_target_indices(scenario: Scenario, positions: np.ndarray) -> np.nd
     return np.flatnonzero(counts == 0)
 
 
+def soft_coverage_potential(
+    scenario: Scenario,
+    positions: np.ndarray,
+    decay_scale: float | None = None,
+) -> float:
+    """Smooth guidance score for targets that are not covered yet.
+
+    Binary coverage gives exactly the same reward to a UAV that is 500 m and
+    1 m outside the sensing radius. This potential keeps the research metric
+    unchanged, but gives CP3 search a useful tie-break signal on that plateau.
+
+    Covered targets contribute 1. For an uncovered target, contribution decays
+    exponentially with its positive distance gap outside the sensing radius.
+    """
+    p = _validated_positions(scenario, positions)
+
+    if len(scenario.targets) == 0:
+        return 0.0
+
+    if decay_scale is None:
+        decay_scale = max(
+            0.75 * scenario.sensing_radius,
+            1.0,
+        )
+    if decay_scale <= 0:
+        raise ValueError("decay_scale must be positive")
+
+    distances = pairwise_distances(
+        scenario.targets,
+        p,
+    )
+    nearest = np.min(distances, axis=1)
+    gap = np.maximum(
+        nearest - scenario.sensing_radius,
+        0.0,
+    )
+    potential = np.exp(-gap / decay_scale)
+
+    weights = scenario.target_weights.astype(float)
+    total_weight = float(np.sum(weights))
+
+    if total_weight <= 0:
+        return float(np.mean(potential))
+
+    return float(
+        np.sum(weights * potential)
+        / total_weight
+    )
+
+
+
 def collision_stats(
     scenario: Scenario,
     positions: np.ndarray,

@@ -227,3 +227,124 @@ checkpoint_02_graph_aware/
       ├─ ablation.py
       └─ statistics.py
 ```
+
+
+## Checkpoint 03 — Formation transition
+
+Nhánh này bắt đầu Checkpoint 03 nhưng vẫn giữ nguyên code Checkpoint 02.
+
+Khác với giả định deployment từ một base cố định, CP3 định nghĩa bài toán tổng quát:
+
+    formation A -> formation B
+
+và tối ưu thời gian chuyển formation dưới các ràng buộc:
+
+- giới hạn tốc độ;
+- collision avoidance trong cả đoạn chuyển động, không chỉ ở endpoint;
+- communication connectivity trong toàn bộ transition;
+- map bounds.
+
+Thiết kế và formulation đầy đủ nằm trong CHECKPOINT_03.md.
+
+Chạy benchmark nhanh:
+
+    python run_transition_benchmark.py --profile quick
+
+Chạy connectivity-stress profile:
+
+    python run_transition_benchmark.py --profile stress
+
+Proposed planner hiện tại là BackboneTransitionPlanner. Mỗi transition segment bảo vệ một maximum-slack spanning tree, nhờ đó có certificate connectivity liên tục trong segment.
+
+
+Joint formation + transition benchmark:
+
+    python run_reconfiguration_benchmark.py --profile quick --seeds 3
+    python run_reconfiguration_benchmark.py --profile stress --seeds 5
+
+Paired statistics:
+
+    python run_reconfiguration_stats.py outputs/reconfiguration_quick/results.csv
+
+The main comparison is now:
+
+    StaticThenTransition
+        CP2 optimizes B without seeing deployment cost
+
+    TransitionAwareGA
+        CP2 graph-aware operators + exact A -> B transition cost in selection
+
+
+### CP3 visualization
+
+Interactive browser visualization:
+
+    python run_visualize_reconfiguration.py --profile quick --problem-index 2 --algorithm both --budget quick --seed 0
+
+Dense showcase:
+
+    python run_visualize_reconfiguration.py --profile showcase --algorithm aware --budget standard --seed 0 --subframes 10 --frame-ms 60
+
+The default output is a self-contained Plotly HTML plus a static PNG. The HTML
+supports play/pause, a time slider, zoom, pan and hover. Add `--gif` only when a
+GIF is useful for slides.
+
+The final TransitionAwareGA prototype uses coverage-first hierarchical selection:
+
+    feasible transition
+    > weighted sensing coverage bucket
+    > final CP2 static fitness bucket
+    > shorter formation time
+    > shorter total travel
+    > exact sensing quality
+
+This avoids sacrificing reachable sensing coverage merely to save a small amount
+of transition time. The buckets deliberately let transition cost choose only
+between near-tied formations. CP3 also disables CP2 articulation protection by
+default so relay UAVs remain movable; connectivity is enforced by repair and the
+transition planner.
+
+Each frame shows:
+
+- formation A and assigned formation B;
+- current UAV positions and trajectory trails;
+- current communication graph;
+- protected backbone edges when available;
+- rectangular no-fly obstacles;
+- target points and currently covered targets;
+- elapsed time, connectivity state and minimum UAV separation.
+
+Outputs are written to:
+
+    outputs/visualization/
+
+
+### Obstacle-aware showcase
+
+The CP3 showcase includes three static rectangular no-fly regions. The proposed
+planner routes UAVs around them with a small visibility graph while continuing
+to enforce communication connectivity and UAV-UAV separation.
+
+    python run_visualize_reconfiguration.py --profile showcase --algorithm aware --budget standard --seed 0 --subframes 10 --frame-ms 60
+
+Each command performs exactly one GA run. For the showcase visualization,
+`standard` uses a larger population and refines several distinct finalists from
+that same population to reduce seed sensitivity without restarting the solver.
+
+Obstacle geometry is implemented with NumPy/basic geometry only; Plotly is used
+only for the interactive browser visualization.
+
+
+### Manual formation editor
+
+Every interactive CP3 HTML now includes an **Edit B** mode.
+
+1. Open the generated HTML.
+2. Click **Edit B**.
+3. Drag any numbered formation-B UAV node.
+4. Coverage, smooth coverage potential, static fitness, communication connectivity, component count, minimum separation, collision count, obstacle feasibility, direct travel and straight-line time lower bound update live.
+5. Click **Copy state** to copy the edited coordinates and metrics as JSON.
+
+The editor is browser-side and intended for diagnosis/demo. It recomputes static formation metrics exactly, but it does not rerun the Python obstacle-aware transition planner. `directTravel` and `timeLB` are therefore straight-line estimates for the edited destination. Rerun the optimizer/planner when an exact transition trajectory is needed.
+
+Entering Edit B hides the old trajectory/backbone because those paths belonged to the optimizer's original destination and would be misleading after manual editing.
