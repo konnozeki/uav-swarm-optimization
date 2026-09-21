@@ -15,7 +15,11 @@ def parse_args():
     )
     parser.add_argument(
         "--baseline",
-        default="static_then_transition",
+        default=None,
+        help=(
+            "Optional single baseline. Omit to compare the proposed method "
+            "against every other algorithm in the CSV."
+        ),
     )
 
     return parser.parse_args()
