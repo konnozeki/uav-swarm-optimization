@@ -244,3 +244,16 @@ def showcase_reconfiguration_profile() -> list[ReconfigurationProblem]:
             obstacle_clearance=18.0,
         )
     ]
+
+
+def final_reconfiguration_profile() -> list[ReconfigurationProblem]:
+    """Deterministic CP3 evaluation set used for final evidence.
+
+    This deliberately combines the ordinary quick cases with the tighter
+    communication-radius stress cases. It is larger than the smoke/quick
+    profiles but still small enough to support 20--30 paired optimizer seeds.
+    """
+    return [
+        *quick_reconfiguration_profile(),
+        *stress_reconfiguration_profile(),
+    ]
