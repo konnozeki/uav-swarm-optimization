@@ -22,3 +22,11 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+
+# Frozen research evidence is version-controlled.
+!results/
+!results/**/*.csv
+!results/**/*.json
+!results/**/*.png
+!results/**/*.md
