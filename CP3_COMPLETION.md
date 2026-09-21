@@ -14,11 +14,12 @@ Checkpoint 04 should not start until the CP3 research package below is frozen.
 - [ ] Sensitivity campaign completed
 - [ ] 20-30 seed final evidence stored
 - [ ] Statistical tests generated from final evidence
-- [ ] Domain/SOTA baseline selected and implemented
+- [x] Domain/literature baselines selected and implemented (JOCC CPGS, JOCC DPGS, R2C-ISE adapter)
 - [ ] Public/external benchmark integrated
 - [ ] Reproducibility environment pinned
 - [ ] Final quantitative case study frozen
 - [ ] Full test suite passing on the frozen commit
+  - Current `cp3-completion` CI passes, but this item remains open until the final frozen commit.
 - [ ] checkpoint-03-final tag/release created
 
 ## Final evidence command
