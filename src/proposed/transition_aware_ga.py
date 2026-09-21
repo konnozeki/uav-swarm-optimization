@@ -54,10 +54,11 @@ class TransitionAwareGA:
     The older weighted-sum selection is still available through
     selection_mode="weighted_joint" for reproducibility/ablation.
 
-    CP2 found no statistically detectable gain from articulation-aware
+    Preliminary CP2 ablation did not show a clear gain from articulation-aware
     protection. CP3 therefore disables articulation protection by default so
     relay UAVs remain free to move while connectivity repair and the transition
-    planner enforce the actual graph constraints.
+    planner enforce the actual graph constraints. The final multi-seed campaign
+    remains the source of any statistical claim.
     """
 
     name = "transition_aware_ga"
@@ -154,8 +155,8 @@ class TransitionAwareGA:
             self.name = name
 
         if graph_config is None:
-            # CP2 ablation did not support articulation-awareness as a useful
-            # contributor. More importantly for CP3, freezing articulation UAVs
+            # Preliminary CP2 ablation did not show a clear articulation gain.
+            # More importantly for CP3, freezing articulation UAVs
             # can prevent a connected relay chain from translating toward
             # uncovered sensing regions.
             graph_config = GraphAwareConfig(
