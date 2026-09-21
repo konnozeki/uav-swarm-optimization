@@ -793,6 +793,21 @@ python run_transition_benchmark.py --profile quick
 python run_reconfiguration_benchmark.py --profile quick --seeds 3
 ```
 
+## Domain / literature baselines
+
+Final CP3 benchmark hiện bao gồm ba UAV-domain adapters gần bài toán hơn
+PSO/NSGA-II:
+
+- `jocc_cpgs_2026_then_transition`: centralized projected-gradient JOCC;
+- `jocc_dpgs_2026_then_transition`: distributed/local-information JOCC;
+- `r2c_ise_aaai26_then_transition`: buffered virtual-force expansion từ R2C.
+
+Các implementation này được ghi rõ là **literature adapters** sang mô hình
+weighted target-point 2D của project, không phải bit-for-bit reproduction
+khi paper gốc dùng sensing/control model khác. Chi tiết và citation nằm trong
+`docs/DOMAIN_BASELINES.md`.
+
+---
 ## Final CP3 evidence
 
 Final benchmark và ablation dùng 24 paired seeds mặc định. Sensitivity dùng budget
