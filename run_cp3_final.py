@@ -1,7 +1,15 @@
 import argparse
 from pathlib import Path
 
-from src.baselines import StaticThenTransition
+from src.baselines import (
+    StaticThenTransition,
+    JOCCGradientConfig,
+    JOCCCentralizedProjectedGradient,
+    JOCCDistributedProjectedGradient,
+    R2CBufferedForceConfig,
+    R2CBufferedVirtualForce,
+    LiteratureStaticThenTransition,
+)
 from src.proposed import TransitionAwareGA
 from src.experiments.reconfiguration_ablation import (
     run_reconfiguration_ablation,
@@ -69,6 +77,18 @@ def parse_args():
         default=DEFAULT_GENERATIONS,
     )
     parser.add_argument(
+        "--domain-iterations",
+        type=int,
+        default=80,
+        help="Iterations for JOCC CPGS/DPGS literature adapters.",
+    )
+    parser.add_argument(
+        "--r2c-iterations",
+        type=int,
+        default=120,
+        help="Iterations for the AAAI-26 R2C-ISE force baseline.",
+    )
+    parser.add_argument(
         "--output-root",
         default="results/cp3_final",
     )
@@ -83,10 +103,34 @@ def _seed_values(count: int):
 
 def run_benchmark_phase(args, problems, seeds, root: Path):
     output_dir = root / "benchmark"
+    jocc_config = JOCCGradientConfig(
+        iterations=args.domain_iterations,
+    )
     algorithms = [
         StaticThenTransition(
             population_size=args.population,
             generations=args.generations,
+        ),
+        LiteratureStaticThenTransition(
+            JOCCCentralizedProjectedGradient(
+                config=jocc_config,
+            )
+        ),
+        LiteratureStaticThenTransition(
+            JOCCDistributedProjectedGradient(
+                config=JOCCGradientConfig(
+                    iterations=args.domain_iterations,
+                    step_fraction=0.05,
+                    connectivity_weight=0.80,
+                ),
+            )
+        ),
+        LiteratureStaticThenTransition(
+            R2CBufferedVirtualForce(
+                config=R2CBufferedForceConfig(
+                    iterations=args.r2c_iterations,
+                )
+            )
         ),
         TransitionAwareGA(
             population_size=args.population,
@@ -104,6 +148,13 @@ def run_benchmark_phase(args, problems, seeds, root: Path):
             "generations": args.generations,
             "profile": "final_reconfiguration_profile",
             "algorithms": [a.name for a in algorithms],
+            "domain_iterations": args.domain_iterations,
+            "r2c_iterations": args.r2c_iterations,
+            "literature_baselines": {
+                "jocc_cpgs_2026": "10.1016/j.comnet.2026.112565",
+                "jocc_dpgs_2026": "10.1016/j.comnet.2026.112565",
+                "r2c_ise_aaai26": "10.1609/aaai.v40i2.37060",
+            },
         },
     )
 
