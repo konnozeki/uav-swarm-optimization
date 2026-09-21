@@ -614,11 +614,15 @@ class TransitionAwareGA:
             float(
                 baseline_metrics.weighted_coverage_ratio
             ),
-            float(
-                soft_coverage_potential(
-                    scenario,
-                    positions,
+            (
+                float(
+                    soft_coverage_potential(
+                        scenario,
+                        positions,
+                    )
                 )
+                if self.use_smooth_coverage_potential
+                else 0.0
             ),
             float(baseline_metrics.fitness),
         )
@@ -723,11 +727,15 @@ class TransitionAwareGA:
                         float(
                             metrics.weighted_coverage_ratio
                         ),
-                        float(
-                            soft_coverage_potential(
-                                scenario,
-                                candidate,
+                        (
+                            float(
+                                soft_coverage_potential(
+                                    scenario,
+                                    candidate,
+                                )
                             )
+                            if self.use_smooth_coverage_potential
+                            else 0.0
                         ),
                         float(metrics.fitness),
                     )
@@ -929,11 +937,15 @@ class TransitionAwareGA:
             float(
                 metrics.weighted_coverage_ratio
             ),
-            float(
-                soft_coverage_potential(
-                    problem.scenario,
-                    positions,
+            (
+                float(
+                    soft_coverage_potential(
+                        problem.scenario,
+                        positions,
+                    )
                 )
+                if self.use_smooth_coverage_potential
+                else 0.0
             ),
             float(metrics.fitness),
         )
