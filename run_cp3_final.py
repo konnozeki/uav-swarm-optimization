@@ -50,6 +50,15 @@ def parse_args():
         help="Paired optimizer seeds. Final evidence defaults to 24.",
     )
     parser.add_argument(
+        "--sensitivity-seeds",
+        type=int,
+        default=8,
+        help=(
+            "Seeds for the much larger one-factor sensitivity grid. "
+            "Final benchmark/ablation still use --seeds."
+        ),
+    )
+    parser.add_argument(
         "--population",
         type=int,
         default=DEFAULT_POPULATION,
@@ -129,7 +138,8 @@ def run_ablation_phase(args, problems, seeds, root: Path):
     )
 
 
-def run_sensitivity_phase(args, problems, seeds, root: Path):
+def run_sensitivity_phase(args, problems, root: Path):
+    seeds = _seed_values(args.sensitivity_seeds)
     output_dir = root / "sensitivity"
     write_experiment_manifest(
         output_dir,
@@ -183,7 +193,7 @@ def main():
         elif phase == "ablation":
             run_ablation_phase(args, problems, seeds, root)
         elif phase == "sensitivity":
-            run_sensitivity_phase(args, problems, seeds, root)
+            run_sensitivity_phase(args, problems, root)
         elif phase == "statistics":
             run_statistics_phase(root)
 
