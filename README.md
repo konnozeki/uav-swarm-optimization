@@ -793,6 +793,26 @@ python run_transition_benchmark.py --profile quick
 python run_reconfiguration_benchmark.py --profile quick --seeds 3
 ```
 
+## Final CP3 evidence
+
+Final benchmark và ablation dùng 24 paired seeds mặc định. Sensitivity dùng budget
+riêng nhỏ hơn vì grid lớn hơn nhiều.
+
+```powershell
+python run_cp3_final.py --phase benchmark
+python run_cp3_final.py --phase ablation
+python run_cp3_final.py --phase sensitivity
+python run_cp3_final.py --phase statistics
+python run_complexity_scaling.py --seeds 5
+```
+
+Benchmark trên target map bên ngoài dùng interchange CSV có cột
+`x,y[,weight]`:
+
+```powershell
+python run_external_benchmark.py targets.csv --width 1000 --height 1000
+```
+
 ## Chạy showcase
 
 ```powershell
