@@ -20,15 +20,19 @@ class R2CBufferedForceConfig:
     upper_ratio: float = 0.90
     alpha: float = 0.01
     beta: float = 0.01
-    step_fraction: float = 0.035
+    boundary_decay: float = 0.01
+    edge_buffer_ratio: float = 0.10
+    speed_fraction: float = 1.0
+    dt: float = 1.0
 
 
 class R2CBufferedVirtualForce:
     """R2C-ISE literature-component baseline from Peng et al., AAAI 2026.
 
     This implements the paper's buffered dynamic virtual-force expansion:
-    repulsive below d_l, zero in [d_l, d_u], attractive above d_u and within
-    communication range. It intentionally does NOT claim to reproduce full R2C,
+    Eq. (9) pairwise spring, Eq. (10) boundary repulsion, Eq. (11) total force
+    and Eq. (12) normalized velocity. It intentionally does NOT claim to
+    reproduce full R2C,
     whose inter-subnetwork module is a trained multipartite GCN designed for
     post-failure recovery.
 
@@ -90,56 +94,132 @@ class R2CBufferedVirtualForce:
             max_rounds=10,
         )
 
+    def _pair_force(
+        self,
+        distance: float,
+        unit_ij: np.ndarray,
+        communication_radius: float,
+    ) -> np.ndarray:
+        """Exact R2C intra-subnetwork virtual spring from Eq. (9).
+
+        The sign convention follows the paper: u_ij points from i to j,
+        therefore the negative branch is repulsive and the positive branch is
+        attractive.
+        """
+        rc = float(communication_radius)
+        dl = self.config.lower_ratio * rc
+        du = self.config.upper_ratio * rc
+
+        if distance <= 1e-12 or distance > rc:
+            return np.zeros(2, dtype=float)
+
+        if distance < dl:
+            magnitude = -np.exp(
+                -self.config.alpha
+                * distance
+                / max(dl, 1e-12)
+            )
+        elif distance <= du:
+            magnitude = 0.0
+        else:
+            magnitude = np.exp(
+                -self.config.beta
+                * (rc - distance)
+                / max(rc - du, 1e-12)
+            )
+
+        return magnitude * unit_ij
+
+    def _boundary_force(
+        self,
+        scenario: Scenario,
+        position: np.ndarray,
+    ) -> np.ndarray:
+        """R2C edge repulsion from Eq. (10).
+
+        Every boundary within the edge buffer contributes an exponentially
+        decaying inward normal force.
+        """
+        buffer_width = (
+            self.config.edge_buffer_ratio
+            * min(scenario.width, scenario.height)
+        )
+        if buffer_width <= 0:
+            return np.zeros(2, dtype=float)
+
+        x, y = map(float, position)
+        terms = (
+            (x, np.array([1.0, 0.0])),
+            (scenario.width - x, np.array([-1.0, 0.0])),
+            (y, np.array([0.0, 1.0])),
+            (scenario.height - y, np.array([0.0, -1.0])),
+        )
+
+        out = np.zeros(2, dtype=float)
+        for distance, inward_normal in terms:
+            if distance <= buffer_width:
+                out += np.exp(
+                    -self.config.boundary_decay
+                    * max(distance, 0.0)
+                ) * inward_normal
+
+        return out
+
     def _force(
         self,
         scenario: Scenario,
         positions: np.ndarray,
     ) -> np.ndarray:
+        """Total ISE force, matching R2C Eqs. (9)-(11)."""
         n = len(positions)
         out = np.zeros_like(positions)
         distances = pairwise_distances(positions, positions)
 
-        rc = scenario.communication_radius
-        dl = self.config.lower_ratio * rc
-        du = self.config.upper_ratio * rc
-
         for i in range(n):
             for j in range(i + 1, n):
                 distance = float(distances[i, j])
-
-                if distance <= 1e-12 or distance > rc:
+                if distance <= 1e-12:
                     continue
 
                 unit_ij = (
                     positions[j] - positions[i]
                 ) / distance
-
-                if distance < dl:
-                    magnitude = -np.exp(
-                        -self.config.alpha
-                        * distance
-                        / max(dl, 1e-12)
-                    )
-                elif distance <= du:
-                    magnitude = 0.0
-                else:
-                    magnitude = np.exp(
-                        -self.config.beta
-                        * (rc - distance)
-                        / max(rc - du, 1e-12)
-                    )
-
-                force = magnitude * unit_ij
+                force = self._pair_force(
+                    distance,
+                    unit_ij,
+                    scenario.communication_radius,
+                )
                 out[i] += force
                 out[j] -= force
 
-        norm = np.linalg.norm(out, axis=1, keepdims=True)
-        return np.divide(
-            out,
-            np.maximum(norm, 1e-12),
-            out=np.zeros_like(out),
+        for i in range(n):
+            out[i] += self._boundary_force(
+                scenario,
+                positions[i],
+            )
+
+        return out
+
+    def _velocity(
+        self,
+        scenario: Scenario,
+        positions: np.ndarray,
+    ) -> np.ndarray:
+        """R2C Eq. (12): capped velocity in the total-force direction."""
+        force = self._force(scenario, positions)
+        norm = np.linalg.norm(force, axis=1, keepdims=True)
+        unit = np.divide(
+            force,
+            norm + 1e-12,
+            out=np.zeros_like(force),
             where=norm > 1e-12,
         )
+
+        vmax = (
+            self.config.speed_fraction
+            * scenario.communication_radius
+        )
+        return vmax * unit
 
     def solve(
         self,
@@ -157,19 +237,17 @@ class R2CBufferedVirtualForce:
         best_metrics = evaluate_positions(scenario, best)
 
         for _ in range(self.config.iterations):
-            direction = self._force(
+            velocity = self._velocity(
                 scenario,
                 positions,
             )
 
-            if not np.any(np.linalg.norm(direction, axis=1) > 1e-12):
+            if not np.any(np.linalg.norm(velocity, axis=1) > 1e-12):
                 break
 
             candidate = (
                 positions
-                + self.config.step_fraction
-                * scenario.communication_radius
-                * direction
+                + self.config.dt * velocity
             )
             candidate = clip_positions(candidate, scenario)
             candidate = repair_solution(
