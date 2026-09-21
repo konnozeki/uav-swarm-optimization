@@ -29,13 +29,10 @@ def paired_reconfiguration_comparisons(
         "formation_time_sec",
         "total_travel_distance",
     ),
+    *,
+    apply_holm: bool = True,
 ) -> pd.DataFrame:
-    """Paired Wilcoxon comparisons for Checkpoint-03 joint experiments.
-
-    Rows are paired on (problem, seed). For lower-is-better metrics such as time
-    and travel, effect is baseline - proposed. Therefore a positive mean/median
-    effect consistently means that the proposed method improved the metric.
-    """
+    """Paired Wilcoxon comparisons for one CP3 baseline."""
     rows = []
 
     left = df[df["algorithm"] == proposed]
@@ -57,12 +54,7 @@ def paired_reconfiguration_comparisons(
             baseline_values,
             on=["problem", "seed"],
             how="inner",
-        )
-
-        # Formation time is NaN for a deadlocked/infeasible transition. Those
-        # pairs are intentionally excluded from the time-specific Wilcoxon test;
-        # feasibility is analyzed separately from continuous time quality.
-        paired = paired.dropna(
+        ).dropna(
             subset=["proposed_value", "baseline_value"]
         )
 
@@ -105,7 +97,7 @@ def paired_reconfiguration_comparisons(
 
     out = pd.DataFrame(rows)
 
-    if len(out):
+    if apply_holm and len(out):
         out["p_holm"] = holm_adjust(
             out["p_value"].to_numpy()
         )
@@ -119,12 +111,7 @@ def feasibility_comparison(
     proposed: str = "transition_aware_ga",
     baseline: str = "static_then_transition",
 ) -> pd.DataFrame:
-    """Report paired transition-feasibility counts.
-
-    This table is intentionally descriptive rather than forcing a Wilcoxon test
-    onto binary outcomes. It also exposes asymmetric pairs: cases where only one
-    method reaches a feasible transition.
-    """
+    """Report paired feasibility counts and exact McNemar p-value."""
     columns = [
         "problem",
         "seed",
@@ -132,14 +119,10 @@ def feasibility_comparison(
     ]
 
     left = df[df["algorithm"] == proposed][columns].rename(
-        columns={
-            "transition_feasible": "proposed_feasible",
-        }
+        columns={"transition_feasible": "proposed_feasible"}
     )
     right = df[df["algorithm"] == baseline][columns].rename(
-        columns={
-            "transition_feasible": "baseline_feasible",
-        }
+        columns={"transition_feasible": "baseline_feasible"}
     )
 
     paired = left.merge(
@@ -148,36 +131,15 @@ def feasibility_comparison(
         how="inner",
     )
 
-    both = int(
-        np.sum(
-            paired["proposed_feasible"]
-            & paired["baseline_feasible"]
-        )
-    )
-    proposed_only = int(
-        np.sum(
-            paired["proposed_feasible"]
-            & ~paired["baseline_feasible"]
-        )
-    )
-    baseline_only = int(
-        np.sum(
-            ~paired["proposed_feasible"]
-            & paired["baseline_feasible"]
-        )
-    )
-    neither = int(
-        np.sum(
-            ~paired["proposed_feasible"]
-            & ~paired["baseline_feasible"]
-        )
-    )
+    proposed_flag = paired["proposed_feasible"].astype(bool)
+    baseline_flag = paired["baseline_feasible"].astype(bool)
 
+    both = int(np.sum(proposed_flag & baseline_flag))
+    proposed_only = int(np.sum(proposed_flag & ~baseline_flag))
+    baseline_only = int(np.sum(~proposed_flag & baseline_flag))
+    neither = int(np.sum(~proposed_flag & ~baseline_flag))
     discordant = proposed_only + baseline_only
 
-    # Exact McNemar test is equivalent to a two-sided Binomial(0.5) test on
-    # discordant pairs. It is appropriate here because transition feasibility
-    # is binary and observations are paired by the same problem/seed.
     if discordant:
         mcnemar_p = float(
             binomtest(
@@ -201,36 +163,108 @@ def feasibility_comparison(
         "discordant_pairs": discordant,
         "mcnemar_exact_p": mcnemar_p,
         "proposed_feasible_rate": (
-            float(paired["proposed_feasible"].mean())
+            float(proposed_flag.mean())
             if len(paired)
             else float("nan")
         ),
         "baseline_feasible_rate": (
-            float(paired["baseline_feasible"].mean())
+            float(baseline_flag.mean())
             if len(paired)
             else float("nan")
         ),
     }])
 
 
+def _resolve_baselines(
+    df: pd.DataFrame,
+    proposed: str,
+    baselines,
+) -> list[str]:
+    if baselines is None:
+        return sorted(
+            algorithm
+            for algorithm in df["algorithm"].dropna().unique()
+            if algorithm != proposed
+        )
+
+    if isinstance(baselines, str):
+        return [baselines]
+
+    return list(baselines)
+
+
 def run_reconfiguration_statistics(
     csv_path: str | Path,
     proposed: str = "transition_aware_ga",
-    baseline: str = "static_then_transition",
+    baseline: str | None = None,
+    baselines=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Compare CP3 against one or every available baseline.
+
+    baseline is retained for backward compatibility. When neither baseline nor
+    baselines is supplied, every algorithm other than proposed is compared.
+    Holm correction is applied globally across continuous tests and separately
+    across exact McNemar feasibility tests.
+    """
     csv_path = Path(csv_path)
     df = pd.read_csv(csv_path)
 
-    continuous = paired_reconfiguration_comparisons(
+    if baseline is not None and baselines is not None:
+        raise ValueError("use either baseline or baselines, not both")
+
+    requested = baseline if baseline is not None else baselines
+    baseline_names = _resolve_baselines(
         df,
-        proposed=proposed,
-        baseline=baseline,
+        proposed,
+        requested,
     )
-    feasibility = feasibility_comparison(
-        df,
-        proposed=proposed,
-        baseline=baseline,
+
+    continuous_parts = []
+    feasibility_parts = []
+
+    for baseline_name in baseline_names:
+        continuous_parts.append(
+            paired_reconfiguration_comparisons(
+                df,
+                proposed=proposed,
+                baseline=baseline_name,
+                apply_holm=False,
+            )
+        )
+        feasibility_parts.append(
+            feasibility_comparison(
+                df,
+                proposed=proposed,
+                baseline=baseline_name,
+            )
+        )
+
+    continuous = (
+        pd.concat(continuous_parts, ignore_index=True)
+        if continuous_parts
+        else pd.DataFrame()
     )
+    feasibility = (
+        pd.concat(feasibility_parts, ignore_index=True)
+        if feasibility_parts
+        else pd.DataFrame()
+    )
+
+    if len(continuous):
+        continuous["p_holm"] = holm_adjust(
+            continuous["p_value"].to_numpy()
+        )
+        continuous["significant_0_05"] = (
+            continuous["p_holm"] < 0.05
+        )
+
+    if len(feasibility):
+        feasibility["mcnemar_p_holm"] = holm_adjust(
+            feasibility["mcnemar_exact_p"].to_numpy()
+        )
+        feasibility["mcnemar_significant_0_05"] = (
+            feasibility["mcnemar_p_holm"] < 0.05
+        )
 
     continuous.to_csv(
         csv_path.parent / "statistics.csv",
