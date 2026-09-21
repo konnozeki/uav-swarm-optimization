@@ -83,6 +83,12 @@ class TransitionAwareGA:
         finalist_count: int = 4,
         guided_offspring: int = 4,
         performance_tolerance: float = 0.005,
+        use_smooth_coverage_potential: bool = True,
+        use_connected_group_mutation: bool = True,
+        use_guided_offspring: bool = True,
+        use_deterministic_refinement: bool = True,
+        use_coverage_probe: bool = True,
+        use_motion_pruning: bool = True,
         graph_config: GraphAwareConfig | None = None,
         static_objective_config: ObjectiveConfig = DEFAULT_OBJECTIVE,
         reconfiguration_objective_config: ReconfigurationObjectiveConfig = (
@@ -132,6 +138,12 @@ class TransitionAwareGA:
         self.finalist_count = min(finalist_count, population_size)
         self.guided_offspring = min(guided_offspring, population_size)
         self.performance_tolerance = performance_tolerance
+        self.use_smooth_coverage_potential = use_smooth_coverage_potential
+        self.use_connected_group_mutation = use_connected_group_mutation
+        self.use_guided_offspring = use_guided_offspring
+        self.use_deterministic_refinement = use_deterministic_refinement
+        self.use_coverage_probe = use_coverage_probe
+        self.use_motion_pruning = use_motion_pruning
         self.static_objective_config = static_objective_config
         self.reconfiguration_objective_config = (
             reconfiguration_objective_config
@@ -249,7 +261,11 @@ class TransitionAwareGA:
         return (
             feasible,
             float(evaluation.weighted_coverage_ratio),
-            float(evaluation.coverage_potential),
+            (
+                float(evaluation.coverage_potential)
+                if self.use_smooth_coverage_potential
+                else 0.0
+            ),
             float(evaluation.final_fitness),
             -float(evaluation.normalized_time),
             -float(evaluation.normalized_travel),
@@ -560,6 +576,9 @@ class TransitionAwareGA:
         used only to choose among equal-coverage mutation proposals so progress
         toward a still-uncovered region is visible to search.
         """
+        if not self.use_connected_group_mutation:
+            return positions
+
         if (
             not force
             and rng.random()
@@ -999,7 +1018,7 @@ class TransitionAwareGA:
         They remain ordinary population members and receive the same exact
         evaluation and selection as stochastic offspring.
         """
-        if self.guided_offspring == 0:
+        if not self.use_guided_offspring or self.guided_offspring == 0:
             return []
 
         screened = []
@@ -1360,35 +1379,38 @@ class TransitionAwareGA:
         cache: dict,
     ):
         """Coverage expansion followed by motion pruning on the best GA result."""
-        (
-            positions,
-            evaluation,
-            transition,
-        ) = self._deterministic_coverage_refine(
-            problem,
-            positions,
-            evaluation,
-            transition,
-            cache,
-        )
-
-        positions, evaluation, transition = self._coverage_probe(
-            problem,
-            positions,
-            evaluation,
-            rng,
-            cache,
-        )
-
-        positions, evaluation, transition = (
-            self._prune_unnecessary_motion(
+        if self.use_deterministic_refinement:
+            (
+                positions,
+                evaluation,
+                transition,
+            ) = self._deterministic_coverage_refine(
                 problem,
                 positions,
                 evaluation,
                 transition,
                 cache,
             )
-        )
+
+        if self.use_coverage_probe:
+            positions, evaluation, transition = self._coverage_probe(
+                problem,
+                positions,
+                evaluation,
+                rng,
+                cache,
+            )
+
+        if self.use_motion_pruning:
+            positions, evaluation, transition = (
+                self._prune_unnecessary_motion(
+                    problem,
+                    positions,
+                    evaluation,
+                    transition,
+                    cache,
+                )
+            )
 
         return (
             positions,
