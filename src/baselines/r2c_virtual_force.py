@@ -22,7 +22,8 @@ class R2CBufferedForceConfig:
     beta: float = 0.01
     boundary_decay: float = 0.01
     edge_buffer_ratio: float = 0.10
-    speed_fraction: float = 1.0
+    max_speed: float | None = None
+    speed_fraction: float = 0.035
     dt: float = 1.0
 
 
@@ -215,9 +216,16 @@ class R2CBufferedVirtualForce:
             where=norm > 1e-12,
         )
 
+        # Eq. (12) uses the physical speed cap directly. The common CP3
+        # Scenario has no speed field, so the adapter keeps the historical
+        # scale-relative fallback unless max_speed is supplied explicitly.
         vmax = (
-            self.config.speed_fraction
-            * scenario.communication_radius
+            float(self.config.max_speed)
+            if self.config.max_speed is not None
+            else (
+                self.config.speed_fraction
+                * scenario.communication_radius
+            )
         )
         return vmax * unit
 
