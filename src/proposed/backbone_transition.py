@@ -60,6 +60,7 @@ class BackboneTransitionPlanner:
         enable_global_planning: bool = True,
         global_knots: int = 25,
         global_iterations: int = 800,
+        cohesion_progress_ratio: float = 0.80,
     ) -> None:
         if communication_margin < 0:
             raise ValueError("communication_margin must be non-negative")
@@ -67,6 +68,11 @@ class BackboneTransitionPlanner:
             raise ValueError("backtracking_factor must be in (0, 1)")
         if global_knots < 3 or global_iterations < 1:
             raise ValueError("global_knots >= 3 and global_iterations >= 1 required")
+        if (
+            not np.isfinite(cohesion_progress_ratio)
+            or not 0.0 <= cohesion_progress_ratio <= 1.0
+        ):
+            raise ValueError("cohesion_progress_ratio must be in [0, 1]")
 
         self.max_steps = max_steps
         self.goal_tolerance = goal_tolerance
@@ -84,6 +90,7 @@ class BackboneTransitionPlanner:
         self.enable_global_planning = bool(enable_global_planning)
         self.global_knots = int(global_knots)
         self.global_iterations = int(global_iterations)
+        self.cohesion_progress_ratio = float(cohesion_progress_ratio)
 
     def _global_path(self, problem, assigned_goals, assignment, *,
                      initial_trajectory=None, endpoint_radius=0.0,
@@ -297,6 +304,78 @@ class BackboneTransitionPlanner:
                 targets[i] = waypoint
 
         return targets
+
+    def _cohesive_candidate(
+        self,
+        current: np.ndarray,
+        individual_desired: np.ndarray,
+        backbone: tuple[tuple[int, int], ...],
+        problem: TransitionProblem,
+    ) -> np.ndarray | None:
+        """Prefer a common translation before allowing unnecessary separation.
+
+        The local obstacle planner still computes a desired move for every UAV.
+        Their mean displacement is the part the swarm can share without changing
+        its relative geometry.  Try that rigid translation first and keep it only
+        when the same continuous safety checks accept it.
+
+        This is deliberately a preference, not a new hard constraint: callers
+        can fall back to the independently steered candidate whenever moving as
+        a group is blocked or sacrifices too much progress.
+        """
+        shared_displacement = np.mean(
+            individual_desired - current,
+            axis=0,
+        )
+
+        if np.linalg.norm(shared_displacement) <= 1e-12:
+            return None
+
+        cohesive_desired = current + shared_displacement
+        cohesive_desired = clip_to_bounds(
+            cohesive_desired,
+            problem,
+        )
+        cohesive_projected = self._project_backbone(
+            current,
+            cohesive_desired,
+            backbone,
+            problem,
+        )
+
+        return self._safe_backtracked_candidate(
+            current,
+            cohesive_projected,
+            backbone,
+            problem,
+        )
+
+    @staticmethod
+    def _goal_progress(
+        current: np.ndarray,
+        candidate: np.ndarray | None,
+        assigned_goals: np.ndarray,
+    ) -> float:
+        if candidate is None:
+            return -np.inf
+
+        before = float(
+            np.sum(
+                np.linalg.norm(
+                    assigned_goals - current,
+                    axis=1,
+                )
+            )
+        )
+        after = float(
+            np.sum(
+                np.linalg.norm(
+                    assigned_goals - candidate,
+                    axis=1,
+                )
+            )
+        )
+        return before - after
 
     def _safe_backtracked_candidate(
         self,
@@ -667,12 +746,47 @@ class BackboneTransitionPlanner:
                 problem,
             )
 
-            candidate = self._safe_backtracked_candidate(
+            individual_candidate = self._safe_backtracked_candidate(
                 current,
                 projected,
                 backbone,
                 problem,
             )
+            cohesive_candidate = self._cohesive_candidate(
+                current,
+                desired,
+                backbone,
+                problem,
+            )
+
+            individual_progress = self._goal_progress(
+                current,
+                individual_candidate,
+                assigned_goals,
+            )
+            cohesive_progress = self._goal_progress(
+                current,
+                cohesive_candidate,
+                assigned_goals,
+            )
+
+            # Do not split merely because every UAV has its own steering target.
+            # Preserve the current shape while the common translation achieves
+            # most of the progress of independent motion.  Separation therefore
+            # happens only when it materially helps navigate or reach the goals.
+            if (
+                cohesive_candidate is not None
+                and cohesive_progress > 1e-8
+                and (
+                    individual_candidate is None
+                    or individual_progress <= 1e-8
+                    or cohesive_progress
+                    >= self.cohesion_progress_ratio * individual_progress
+                )
+            ):
+                candidate = cohesive_candidate
+            else:
+                candidate = individual_candidate
 
             if candidate is None:
                 deadlocked = True
