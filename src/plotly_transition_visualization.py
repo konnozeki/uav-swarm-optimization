@@ -955,40 +955,25 @@ def _manual_editor_post_script(
 """
 
 
-def save_transition_html(
+def build_transition_figure(
     problem: TransitionProblem,
     solution: TransitionSolution,
-    output_path: str | Path,
     title: str | None = None,
     targets: np.ndarray | None = None,
     sensing_radius: float | None = None,
     target_weights: np.ndarray | None = None,
     subframes_per_step: int = 5,
     frame_duration_ms: int = 90,
-    enable_manual_edit: bool = True,
-) -> None:
-    """Save an interactive browser visualization as one self-contained HTML.
+):
+    """Build the interactive Plotly figure for one transition.
 
     Plotly gives us a map-like 2D canvas with pan, zoom, hover, play/pause and a
     time slider. Recorded planner states are linearly interpolated only for
     display, so visualization remains smooth without changing optimization or
     transition metrics.
-
-    The HTML embeds Plotly itself. It therefore opens offline and does not need
-    a local web server.
     """
     if frame_duration_ms <= 0:
         raise ValueError("frame_duration_ms must be positive")
-
-    output_path = Path(output_path)
-
-    if output_path.suffix.lower() != ".html":
-        raise ValueError("interactive visualization output must be .html")
-
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
 
     trajectory = np.asarray(
         solution.trajectory,
@@ -1267,6 +1252,47 @@ def save_transition_html(
         },
     )
 
+    return fig
+
+
+def save_transition_html(
+    problem: TransitionProblem,
+    solution: TransitionSolution,
+    output_path: str | Path,
+    title: str | None = None,
+    targets: np.ndarray | None = None,
+    sensing_radius: float | None = None,
+    target_weights: np.ndarray | None = None,
+    subframes_per_step: int = 5,
+    frame_duration_ms: int = 90,
+    enable_manual_edit: bool = True,
+) -> None:
+    """Save an interactive browser visualization as one self-contained HTML.
+
+    The HTML embeds Plotly itself. It therefore opens offline and does not need
+    a local web server.
+    """
+    output_path = Path(output_path)
+
+    if output_path.suffix.lower() != ".html":
+        raise ValueError("interactive visualization output must be .html")
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    fig = build_transition_figure(
+        problem,
+        solution,
+        title=title,
+        targets=targets,
+        sensing_radius=sensing_radius,
+        target_weights=target_weights,
+        subframes_per_step=subframes_per_step,
+        frame_duration_ms=frame_duration_ms,
+    )
+
     post_script = None
 
     if enable_manual_edit:
@@ -1276,7 +1302,7 @@ def save_transition_html(
             targets,
             sensing_radius,
             target_weights,
-            goal_trace_index=len(data) - 1,
+            goal_trace_index=len(fig.data) - 1,
         )
 
     fig.write_html(

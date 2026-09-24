@@ -16,4 +16,21 @@ __all__ = [
     "DirectTransitionPlanner",
     "EndpointGuardTransitionPlanner",
     "StaticThenTransition",
+    "JOCCGradientConfig",
+    "JOCCCentralizedProjectedGradient",
+    "JOCCDistributedProjectedGradient",
+    "R2CBufferedForceConfig",
+    "R2CBufferedVirtualForce",
+    "LiteratureStaticThenTransition",
 ]
+
+from .jocc_projected_gradient import (
+    JOCCGradientConfig,
+    JOCCCentralizedProjectedGradient,
+    JOCCDistributedProjectedGradient,
+)
+from .r2c_virtual_force import (
+    R2CBufferedForceConfig,
+    R2CBufferedVirtualForce,
+)
+from .literature_then_transition import LiteratureStaticThenTransition

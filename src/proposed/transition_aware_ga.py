@@ -25,6 +25,7 @@ from ..reconfiguration import (
     ReconfigurationSolution,
     evaluate_reconfiguration,
 )
+from ..transition import bottleneck_goal_assignment
 from .backbone_transition import BackboneTransitionPlanner
 from .graph_aware_ga import GraphAwareConfig, GraphAwareGA
 
@@ -54,10 +55,11 @@ class TransitionAwareGA:
     The older weighted-sum selection is still available through
     selection_mode="weighted_joint" for reproducibility/ablation.
 
-    CP2 found no statistically detectable gain from articulation-aware
+    Preliminary CP2 ablation did not show a clear gain from articulation-aware
     protection. CP3 therefore disables articulation protection by default so
     relay UAVs remain free to move while connectivity repair and the transition
-    planner enforce the actual graph constraints.
+    planner enforce the actual graph constraints. The final multi-seed campaign
+    remains the source of any statistical claim.
     """
 
     name = "transition_aware_ga"
@@ -69,20 +71,30 @@ class TransitionAwareGA:
 
     def __init__(
         self,
-        population_size: int = 18,
-        generations: int = 20,
-        elite_size: int = 4,
+        population_size: int = 10,
+        generations: int = 6,
+        elite_size: int = 2,
         mutation_rate: float = 0.25,
         mutation_sigma: float = 65.0,
         tournament_size: int = 3,
         warm_start_fraction: float = 0.35,
         group_mutation_probability: float = 0.45,
-        max_group_hops: int = 3,
-        coverage_refine_rounds: int = 6,
-        coverage_refine_exact_candidates: int = 12,
-        finalist_count: int = 4,
-        guided_offspring: int = 4,
+        max_group_hops: int = 1,
+        coverage_refine_rounds: int = 1,
+        coverage_refine_exact_candidates: int = 2,
+        finalist_count: int = 2,
+        guided_offspring: int = 1,
         performance_tolerance: float = 0.005,
+        use_smooth_coverage_potential: bool = True,
+        use_connected_group_mutation: bool = True,
+        use_guided_offspring: bool = True,
+        use_deterministic_refinement: bool = True,
+        use_coverage_probe: bool = True,
+        use_motion_pruning: bool = True,
+        use_obstacle_greedy_guidance: bool = False,
+        obstacle_guidance_trials: int = 48,
+        realtime: bool = True,
+        use_global_planning: bool = True,
         graph_config: GraphAwareConfig | None = None,
         static_objective_config: ObjectiveConfig = DEFAULT_OBJECTIVE,
         reconfiguration_objective_config: ReconfigurationObjectiveConfig = (
@@ -113,6 +125,8 @@ class TransitionAwareGA:
             raise ValueError("guided_offspring must be non-negative")
         if performance_tolerance <= 0:
             raise ValueError("performance_tolerance must be positive")
+        if obstacle_guidance_trials < 0:
+            raise ValueError("obstacle_guidance_trials must be non-negative")
         if selection_mode not in self.VALID_SELECTION_MODES:
             raise ValueError(
                 "selection_mode must be one of "
@@ -132,6 +146,19 @@ class TransitionAwareGA:
         self.finalist_count = min(finalist_count, population_size)
         self.guided_offspring = min(guided_offspring, population_size)
         self.performance_tolerance = performance_tolerance
+        self.use_smooth_coverage_potential = use_smooth_coverage_potential
+        self.use_connected_group_mutation = use_connected_group_mutation
+        self.use_guided_offspring = use_guided_offspring
+        self.use_deterministic_refinement = use_deterministic_refinement
+        self.use_coverage_probe = use_coverage_probe
+        self.use_motion_pruning = use_motion_pruning
+        self.use_obstacle_greedy_guidance = use_obstacle_greedy_guidance
+        self.obstacle_guidance_trials = obstacle_guidance_trials
+        # In real-time mode the population is ranked with an admissible motion
+        # lower bound; only final contenders run the expensive trajectory
+        # planner.  Set False to reproduce the former exhaustive CP3 search.
+        self.realtime = bool(realtime)
+        self.use_global_planning = bool(use_global_planning)
         self.static_objective_config = static_objective_config
         self.reconfiguration_objective_config = (
             reconfiguration_objective_config
@@ -142,8 +169,8 @@ class TransitionAwareGA:
             self.name = name
 
         if graph_config is None:
-            # CP2 ablation did not support articulation-awareness as a useful
-            # contributor. More importantly for CP3, freezing articulation UAVs
+            # Preliminary CP2 ablation did not show a clear articulation gain.
+            # More importantly for CP3, freezing articulation UAVs
             # can prevent a connected relay chain from translating toward
             # uncovered sensing regions.
             graph_config = GraphAwareConfig(
@@ -163,7 +190,13 @@ class TransitionAwareGA:
             objective_config=static_objective_config,
         )
 
-        self.transition_planner = BackboneTransitionPlanner()
+        # The raw backbone path is already continuously certified.  Expensive
+        # shortcut smoothing is deliberately reserved for offline rendering,
+        # not hundreds of fitness calls in the real-time optimizer.
+        self.transition_planner = BackboneTransitionPlanner(
+            enable_smoothing=False,
+            enable_global_planning=False,
+        )
 
     @staticmethod
     def _cache_key(positions: np.ndarray) -> bytes:
@@ -249,7 +282,11 @@ class TransitionAwareGA:
         return (
             feasible,
             float(evaluation.weighted_coverage_ratio),
-            float(evaluation.coverage_potential),
+            (
+                float(evaluation.coverage_potential)
+                if self.use_smooth_coverage_potential
+                else 0.0
+            ),
             float(evaluation.final_fitness),
             -float(evaluation.normalized_time),
             -float(evaluation.normalized_travel),
@@ -301,6 +338,107 @@ class TransitionAwareGA:
             )
 
         return cache[key]
+
+    def _estimate_candidate(
+        self,
+        problem: ReconfigurationProblem,
+        positions: np.ndarray,
+        cache: dict,
+    ) -> ReconfigurationEvaluation:
+        """Cheap transition-aware ranking signal used inside real-time GA.
+
+        The bottleneck assignment gives a hard lower bound on formation time
+        and the matched straight-line travel is a lower bound on travel.  It
+        preserves the desired preference for nearby formations without running
+        the per-step backbone planner for every chromosome.  Finalists are
+        always evaluated exactly before they can be returned.
+        """
+        key = (b"estimate", self._cache_key(positions))
+        if key in cache:
+            return cache[key]
+
+        scenario = problem.scenario
+        static_metrics = evaluate_positions(
+            scenario,
+            positions,
+            self.static_objective_config,
+        )
+        coverage_potential = soft_coverage_potential(scenario, positions)
+        obstacle_free = formation_obstacle_free(
+            positions,
+            problem.obstacles,
+            problem.obstacle_clearance,
+        )
+        static_feasible = bool(static_metrics.feasible and obstacle_free)
+
+        if static_feasible:
+            assigned, _, bottleneck = bottleneck_goal_assignment(
+                problem.start_positions,
+                positions,
+            )
+            travel = float(np.sum(np.linalg.norm(
+                assigned - problem.start_positions,
+                axis=1,
+            )))
+            # The actual controller is discrete, so use its rounded-up time
+            # lower bound instead of an optimistic continuous value.
+            steps = int(np.ceil(
+                bottleneck / max(problem.max_speed * problem.dt, 1e-12)
+                - 1e-12
+            ))
+            formation_time = float(steps * problem.dt)
+            normalized_time = formation_time / max(
+                problem.reference_time,
+                problem.dt,
+            )
+            normalized_travel = travel / max(
+                scenario.n_uavs * problem.reference_distance,
+                1e-12,
+            )
+            joint = (
+                static_metrics.fitness
+                - self.reconfiguration_objective_config.time_weight
+                * normalized_time
+                - self.reconfiguration_objective_config.travel_weight
+                * normalized_travel
+            )
+        else:
+            formation_time = float("nan")
+            travel = float("nan")
+            normalized_time = 1.0
+            normalized_travel = 1.0
+            joint = (
+                static_metrics.fitness
+                - self.reconfiguration_objective_config.transition_infeasible_penalty
+                - static_metrics.constraint_violation
+            )
+
+        estimate = ReconfigurationEvaluation(
+            final_fitness=float(static_metrics.fitness),
+            weighted_coverage_ratio=float(static_metrics.weighted_coverage_ratio),
+            coverage_potential=float(coverage_potential),
+            redundancy_excess=float(static_metrics.redundancy_excess),
+            static_feasible=static_feasible,
+            static_constraint_violation=float(static_metrics.constraint_violation),
+            final_obstacle_free=bool(obstacle_free),
+            transition_attempted=False,
+            transition_feasible=False,
+            reached_goal=False,
+            formation_time_sec=formation_time,
+            total_travel_distance=travel,
+            time_efficiency=0.0,
+            continuous_connected_rate=0.0,
+            min_continuous_pair_distance=float("nan"),
+            transition_obstacle_free=False,
+            normalized_time=float(normalized_time),
+            normalized_travel=float(normalized_travel),
+            joint_fitness=float(joint),
+            # This means statically feasible for evolutionary ranking only;
+            # exact transition feasibility is required for the returned result.
+            feasible=static_feasible,
+        )
+        cache[key] = estimate
+        return estimate
 
     def _repair_candidate(
         self,
@@ -560,6 +698,9 @@ class TransitionAwareGA:
         used only to choose among equal-coverage mutation proposals so progress
         toward a still-uncovered region is visible to search.
         """
+        if not self.use_connected_group_mutation:
+            return positions
+
         if (
             not force
             and rng.random()
@@ -595,11 +736,15 @@ class TransitionAwareGA:
             float(
                 baseline_metrics.weighted_coverage_ratio
             ),
-            float(
-                soft_coverage_potential(
-                    scenario,
-                    positions,
+            (
+                float(
+                    soft_coverage_potential(
+                        scenario,
+                        positions,
+                    )
                 )
+                if self.use_smooth_coverage_potential
+                else 0.0
             ),
             float(baseline_metrics.fitness),
         )
@@ -704,11 +849,15 @@ class TransitionAwareGA:
                         float(
                             metrics.weighted_coverage_ratio
                         ),
-                        float(
-                            soft_coverage_potential(
-                                scenario,
-                                candidate,
+                        (
+                            float(
+                                soft_coverage_potential(
+                                    scenario,
+                                    candidate,
+                                )
                             )
+                            if self.use_smooth_coverage_potential
+                            else 0.0
                         ),
                         float(metrics.fitness),
                     )
@@ -910,11 +1059,15 @@ class TransitionAwareGA:
             float(
                 metrics.weighted_coverage_ratio
             ),
-            float(
-                soft_coverage_potential(
-                    problem.scenario,
-                    positions,
+            (
+                float(
+                    soft_coverage_potential(
+                        problem.scenario,
+                        positions,
+                    )
                 )
+                if self.use_smooth_coverage_potential
+                else 0.0
             ),
             float(metrics.fitness),
         )
@@ -999,7 +1152,7 @@ class TransitionAwareGA:
         They remain ordinary population members and receive the same exact
         evaluation and selection as stochastic offspring.
         """
-        if self.guided_offspring == 0:
+        if not self.use_guided_offspring or self.guided_offspring == 0:
             return []
 
         screened = []
@@ -1360,35 +1513,38 @@ class TransitionAwareGA:
         cache: dict,
     ):
         """Coverage expansion followed by motion pruning on the best GA result."""
-        (
-            positions,
-            evaluation,
-            transition,
-        ) = self._deterministic_coverage_refine(
-            problem,
-            positions,
-            evaluation,
-            transition,
-            cache,
-        )
-
-        positions, evaluation, transition = self._coverage_probe(
-            problem,
-            positions,
-            evaluation,
-            rng,
-            cache,
-        )
-
-        positions, evaluation, transition = (
-            self._prune_unnecessary_motion(
+        if self.use_deterministic_refinement:
+            (
+                positions,
+                evaluation,
+                transition,
+            ) = self._deterministic_coverage_refine(
                 problem,
                 positions,
                 evaluation,
                 transition,
                 cache,
             )
-        )
+
+        if self.use_coverage_probe and not self.realtime:
+            positions, evaluation, transition = self._coverage_probe(
+                problem,
+                positions,
+                evaluation,
+                rng,
+                cache,
+            )
+
+        if self.use_motion_pruning and not self.realtime:
+            positions, evaluation, transition = (
+                self._prune_unnecessary_motion(
+                    problem,
+                    positions,
+                    evaluation,
+                    transition,
+                    cache,
+                )
+            )
 
         return (
             positions,
@@ -1428,6 +1584,175 @@ class TransitionAwareGA:
             candidate,
         )
 
+    def _obstacle_aware_greedy_goal(
+        self,
+        problem: ReconfigurationProblem,
+        grid_size: int = 8,
+    ) -> np.ndarray | None:
+        """Build a CP1-style sensing formation while excluding no-fly space.
+
+        This is deliberately an endpoint generator, not a claim that Greedy
+        alone solves reconfiguration.  The output is subsequently blended with
+        a known transition-feasible CP3 formation and every blend is evaluated
+        by the real backbone planner.
+        """
+        scenario = problem.scenario
+        xs = np.linspace(0.0, scenario.width, grid_size)
+        ys = np.linspace(0.0, scenario.height, grid_size)
+        grid = np.array(
+            [(x, y) for x in xs for y in ys],
+            dtype=float,
+        )
+
+        total_weight = float(np.sum(scenario.target_weights))
+        if total_weight > 0:
+            centroid = np.average(
+                scenario.targets,
+                axis=0,
+                weights=scenario.target_weights,
+            )
+        else:
+            centroid = np.mean(scenario.targets, axis=0)
+
+        candidates = np.vstack([
+            scenario.targets,
+            grid,
+            np.asarray(centroid, dtype=float)[None, :],
+        ])
+        obstacle_free = np.array([
+            formation_obstacle_free(
+                point[None, :],
+                problem.obstacles,
+                problem.obstacle_clearance,
+            )
+            for point in candidates
+        ])
+        candidates = candidates[obstacle_free]
+
+        if len(candidates) == 0:
+            return None
+
+        positions: list[np.ndarray] = []
+
+        for _ in range(scenario.n_uavs):
+            current = np.asarray(
+                positions,
+                dtype=float,
+            ).reshape(-1, 2)
+
+            if len(current) == 0:
+                valid = np.ones(len(candidates), dtype=bool)
+            else:
+                distances = np.linalg.norm(
+                    candidates[:, None, :] - current[None, :, :],
+                    axis=2,
+                )
+                valid = (
+                    np.all(
+                        distances >= scenario.min_separation - 1e-9,
+                        axis=1,
+                    )
+                    & np.any(
+                        distances <= scenario.communication_radius + 1e-9,
+                        axis=1,
+                    )
+                )
+
+            options = candidates[valid]
+            if len(options) == 0:
+                return None
+
+            scores = [
+                evaluate_positions(
+                    scenario,
+                    np.vstack([current, point]),
+                    self.static_objective_config,
+                ).fitness
+                for point in options
+            ]
+            positions.append(
+                options[int(np.argmax(scores))].copy()
+            )
+
+        goal = np.asarray(positions, dtype=float)
+        return (
+            goal
+            if formation_obstacle_free(
+                goal,
+                problem.obstacles,
+                problem.obstacle_clearance,
+            )
+            else None
+        )
+
+    def _greedy_guided_obstacle_refine(
+        self,
+        problem: ReconfigurationProblem,
+        base_positions: np.ndarray,
+        base_evaluation: ReconfigurationEvaluation,
+        base_transition,
+        cache: dict,
+        seed: int,
+    ):
+        """Raise coverage toward an obstacle-aware Greedy endpoint safely.
+
+        Greedy supplies a high-coverage destination but may have no connected
+        route from formation A.  Rather than returning that unsafe endpoint,
+        explore short blends from a certified CP3 result to permutations of the
+        Greedy slots.  The exact transition planner is the acceptance oracle.
+        This makes the operation monotonic: it can only improve the normal CP3
+        selection key and can never replace a feasible solution with a merely
+        static one.
+        """
+        if (
+            not self.use_obstacle_greedy_guidance
+            or not problem.obstacles
+            or self.obstacle_guidance_trials == 0
+        ):
+            return base_positions, base_evaluation, base_transition
+
+        greedy_goal = self._obstacle_aware_greedy_goal(problem)
+        if greedy_goal is None:
+            return base_positions, base_evaluation, base_transition
+
+        best_positions = base_positions.copy()
+        best_evaluation = base_evaluation
+        best_transition = base_transition
+        rng = np.random.default_rng(seed)
+
+        # A small fixed schedule is enough to move through coverage plateaus;
+        # the planner rejects blends whose obstacle route is not viable.
+        fractions = (0.10, 0.20, 0.30)
+
+        for trial in range(self.obstacle_guidance_trials):
+            guide = (
+                greedy_goal
+                if trial == 0
+                else greedy_goal[rng.permutation(len(greedy_goal))]
+            )
+
+            for fraction in fractions:
+                candidate = best_positions + fraction * (
+                    guide - best_positions
+                )
+                candidate = self._repair_candidate(problem, candidate)
+                evaluation, transition = self._evaluate_candidate(
+                    problem,
+                    candidate,
+                    cache,
+                )
+
+                if (
+                    evaluation.feasible
+                    and self._selection_key(evaluation)
+                    > self._selection_key(best_evaluation)
+                ):
+                    best_positions = candidate
+                    best_evaluation = evaluation
+                    best_transition = transition
+
+        return best_positions, best_evaluation, best_transition
+
     def solve(
         self,
         problem: ReconfigurationProblem,
@@ -1441,6 +1766,40 @@ class TransitionAwareGA:
             best_evaluation,
             best_transition,
         ) = self._solve_single_run(problem, rng, cache)
+
+        # A failed local controller is not proof that a formation is unreachable.
+        # Try the high-coverage, obstacle-aware Greedy destination with joint
+        # waypoint planning once, outside the evolutionary fitness loop.
+        if problem.obstacles and self.use_global_planning:
+            greedy_goal = self._obstacle_aware_greedy_goal(problem)
+            if greedy_goal is not None:
+                global_evaluation, global_transition = evaluate_reconfiguration(
+                    problem, greedy_goal,
+                    BackboneTransitionPlanner(enable_global_planning=True),
+                    static_objective_config=self.static_objective_config,
+                    objective_config=self.reconfiguration_objective_config,
+                )
+                if (
+                    global_evaluation.feasible
+                    and self._selection_key(global_evaluation)
+                    > self._selection_key(best_evaluation)
+                ):
+                    best_positions = greedy_goal
+                    best_evaluation = global_evaluation
+                    best_transition = global_transition
+
+        (
+            best_positions,
+            best_evaluation,
+            best_transition,
+        ) = self._greedy_guided_obstacle_refine(
+            problem,
+            best_positions,
+            best_evaluation,
+            best_transition,
+            cache,
+            seed,
+        )
 
         runtime = time.perf_counter() - start_time
 
@@ -1487,10 +1846,12 @@ class TransitionAwareGA:
 
         for _ in range(self.generations):
             evaluated = [
-                self._evaluate_candidate(
-                    problem,
-                    individual,
-                    cache,
+                (
+                    self._estimate_candidate(problem, individual, cache),
+                    None,
+                )
+                if self.realtime else self._evaluate_candidate(
+                    problem, individual, cache,
                 )
                 for individual in population
             ]
@@ -1512,13 +1873,18 @@ class TransitionAwareGA:
                 self._cache_key(individual)
                 for individual in next_population
             }
-            next_population.extend(
-                self._guided_generation_children(
-                    problem,
-                    next_population,
-                    occupied,
-                )[: max(0, self.population_size - len(next_population))]
-            )
+            # The directed children enumerate many relay/cluster combinations.
+            # They are valuable in offline research mode, but dominate a
+            # short-horizon control cycle even after transition simulation has
+            # been deferred to finalists.
+            if not self.realtime:
+                next_population.extend(
+                    self._guided_generation_children(
+                        problem,
+                        next_population,
+                        occupied,
+                    )[: max(0, self.population_size - len(next_population))]
+                )
 
             while len(next_population) < self.population_size:
                 a, a_score = self.operator._tournament(
@@ -1549,21 +1915,24 @@ class TransitionAwareGA:
                     problem,
                     child,
                 )
-                child = self._group_guided_mutation(
-                    problem,
-                    child,
-                    rng,
-                )
+                if not self.realtime:
+                    child = self._group_guided_mutation(
+                        problem,
+                        child,
+                        rng,
+                    )
 
                 next_population.append(child)
 
             population = next_population
 
         evaluated = [
-            self._evaluate_candidate(
-                problem,
-                individual,
-                cache,
+            (
+                self._estimate_candidate(problem, individual, cache),
+                None,
+            )
+            if self.realtime else self._evaluate_candidate(
+                problem, individual, cache,
             )
             for individual in population
         ]
@@ -1597,7 +1966,16 @@ class TransitionAwareGA:
 
         for index in finalists:
             positions = population[index].copy()
-            evaluation, transition = evaluated[index]
+            if self.realtime:
+                evaluation, transition = self._evaluate_candidate(
+                    problem,
+                    positions,
+                    cache,
+                )
+            else:
+                evaluation, transition = evaluated[index]
+            if not evaluation.feasible:
+                continue
             positions, evaluation, transition = self._post_refine_solution(
                 problem,
                 positions,
@@ -1617,7 +1995,23 @@ class TransitionAwareGA:
                 best_transition = transition
 
         if best_evaluation is None:
-            raise RuntimeError("the final population contained no candidate")
+            # A lower-bound ranking cannot prove that a destination has a
+            # connected path.  The current formation is always a valid,
+            # zero-motion fallback, so a tight final-contender set must never
+            # make a control cycle fail outright.
+            fallback = problem.start_positions.copy()
+            evaluation, transition = self._evaluate_candidate(
+                problem,
+                fallback,
+                cache,
+            )
+            if not evaluation.feasible:
+                raise RuntimeError(
+                    "the current formation could not be evaluated"
+                )
+            best_positions = fallback
+            best_evaluation = evaluation
+            best_transition = transition
 
         return (
             best_positions,

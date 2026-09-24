@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import networkx as nx
 import numpy as np
+import time
 
 from ..graph_ops import communication_graph_from_positions
 from ..obstacles import (
@@ -55,11 +56,17 @@ class BackboneTransitionPlanner:
         minimum_scale: float = 1e-4,
         stall_limit: int = 12,
         shortcut_lookahead: int = 12,
+        enable_smoothing: bool = False,
+        enable_global_planning: bool = True,
+        global_knots: int = 25,
+        global_iterations: int = 800,
     ) -> None:
         if communication_margin < 0:
             raise ValueError("communication_margin must be non-negative")
         if not 0 < backtracking_factor < 1:
             raise ValueError("backtracking_factor must be in (0, 1)")
+        if global_knots < 3 or global_iterations < 1:
+            raise ValueError("global_knots >= 3 and global_iterations >= 1 required")
 
         self.max_steps = max_steps
         self.goal_tolerance = goal_tolerance
@@ -69,6 +76,76 @@ class BackboneTransitionPlanner:
         self.minimum_scale = minimum_scale
         self.stall_limit = stall_limit
         self.shortcut_lookahead = max(2, int(shortcut_lookahead))
+        # Smoothing is useful when exporting a presentation trajectory, but it
+        # is not part of finding a feasible trajectory.  Running its O(T *
+        # lookahead) set of extra certified plans for every GA chromosome was
+        # the dominant cost of CP3.  Keep it opt-in for offline visualisation.
+        self.enable_smoothing = bool(enable_smoothing)
+        self.enable_global_planning = bool(enable_global_planning)
+        self.global_knots = int(global_knots)
+        self.global_iterations = int(global_iterations)
+
+    def _global_path(self, problem, assigned_goals, assignment, *,
+                     initial_trajectory=None, endpoint_radius=0.0,
+                     endpoint_accept=None, endpoint_terms=None, deadline=None):
+        from .formation_path import optimize_path
+
+        def certify(path):
+            if deadline is not None and time.perf_counter() >= deadline:
+                return None
+            if endpoint_accept is not None and not endpoint_accept(path[-1]):
+                return None
+            return self._certify_waypoints(problem, path, assignment, deadline=deadline)
+
+        return optimize_path(
+            problem, assigned_goals, certify,
+            knots=self.global_knots, max_iterations=self.global_iterations,
+            initial_trajectory=initial_trajectory, endpoint_radius=endpoint_radius,
+            endpoint_terms=endpoint_terms, deadline=deadline,
+        )
+
+    def _certify_waypoints(self, problem, path, assignment, *, deadline=None):
+        from ..transition import evaluate_transition
+
+        if not len(path) or not np.isfinite(path).all():
+            return None
+        states = [path[0].copy()]
+        backbones = []
+        for start, end in zip(path[:-1], path[1:]):
+            if deadline is not None and time.perf_counter() >= deadline:
+                return None
+            segment = self._linear_shortcut(start, end, problem)
+            if segment is None:
+                return None
+            states.extend(segment[0])
+            backbones.extend(segment[1])
+            if len(states) - 1 > self.max_steps:
+                return None
+        solution = TransitionSolution(
+            trajectory=np.asarray(states), assigned_goals=path[-1].copy(),
+            assignment=assignment, planner=self.name, reached_goal=True,
+            backbones=backbones,
+        )
+        if evaluate_transition(problem, solution).feasible:
+            return solution
+        return None
+
+    def refine_path(self, problem, *, initial_trajectory=None, endpoint_radius=0.0,
+                    endpoint_accept=None, endpoint_terms=None, deadline=None):
+        """Plan a proposed endpoint, optionally allowing per-coordinate slack.
+
+        UAV identity must already be assigned by the caller. With endpoint slack,
+        callers must evaluate the *returned* endpoint, not the requested one.
+        This explicit API keeps fixed-goal `solve` semantics unchanged.
+        """
+        if problem.allow_reassignment:
+            raise ValueError("refine_path requires an identity-assigned goal")
+        return self._global_path(
+            problem, problem.goal_positions, np.arange(problem.n_uavs),
+            initial_trajectory=initial_trajectory, endpoint_radius=endpoint_radius,
+            endpoint_accept=endpoint_accept, endpoint_terms=endpoint_terms,
+            deadline=deadline,
+        )
 
     def _backbone(
         self,
@@ -88,7 +165,7 @@ class BackboneTransitionPlanner:
 
         graph = communication_graph_from_positions(
             positions,
-            effective_radius,
+            effective_radius + TRANSITION_TOL,
         )
 
         if not nx.is_connected(graph):
@@ -528,7 +605,7 @@ class BackboneTransitionPlanner:
             result_backbones,
         )
 
-    def solve(self, problem: TransitionProblem) -> TransitionSolution:
+    def solve(self, problem: TransitionProblem, *, deadline=None) -> TransitionSolution:
         if not formation_connected(
             problem.start_positions,
             problem.communication_radius,
@@ -558,6 +635,8 @@ class BackboneTransitionPlanner:
         stall_count = 0
 
         for _ in range(self.max_steps):
+            if deadline is not None and time.perf_counter() >= deadline:
+                break
             goal_distance = np.linalg.norm(
                 assigned_goals - current,
                 axis=1,
@@ -642,7 +721,18 @@ class BackboneTransitionPlanner:
         )
         final_backbones = backbones
 
-        if reached and len(final_trajectory) > 1:
+        # Collisions and connectivity can deadlock the local controller even
+        # in open space, so joint planning is not restricted to obstacle maps.
+        if not reached and self.enable_global_planning:
+            global_solution = self._global_path(problem, assigned_goals, assignment, deadline=deadline)
+            if global_solution is not None:
+                return global_solution
+
+        if (
+            self.enable_smoothing
+            and reached
+            and len(final_trajectory) > 1
+        ):
             (
                 final_trajectory,
                 final_backbones,

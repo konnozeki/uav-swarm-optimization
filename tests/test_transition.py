@@ -3,6 +3,9 @@ import numpy as np
 from src.baselines import DirectTransitionPlanner
 from src.obstacles import (
     AxisAlignedRectangle,
+    _cached_corner_visibility_graph,
+    _legacy_next_visibility_waypoint,
+    next_visibility_waypoint,
     segment_intersects_obstacle,
 )
 from src.proposed import BackboneTransitionPlanner
@@ -146,6 +149,32 @@ def test_backbone_transition_detours_around_rectangle():
     assert proposed_metrics.reached_goal
     assert proposed_metrics.obstacle_free
     assert proposed_metrics.feasible
+
+
+def test_cached_visibility_graph_matches_full_graph_and_is_reused():
+    obstacles = (
+        AxisAlignedRectangle(35.0, 20.0, 50.0, 75.0, name="a"),
+        AxisAlignedRectangle(62.0, 35.0, 78.0, 90.0, name="b"),
+    )
+    start = np.array([10.0, 50.0])
+    goal = np.array([95.0, 55.0])
+    _cached_corner_visibility_graph.cache_clear()
+
+    expected = _legacy_next_visibility_waypoint(
+        start, goal, obstacles, 3.0, 110.0, 110.0
+    )
+    first = next_visibility_waypoint(
+        start, goal, obstacles, 3.0, 110.0, 110.0
+    )
+    second = next_visibility_waypoint(
+        start + [0.0, 2.0], goal, obstacles, 3.0, 110.0, 110.0
+    )
+
+    assert np.allclose(first, expected)
+    assert second is not None
+    info = _cached_corner_visibility_graph.cache_info()
+    assert info.misses == 1
+    assert info.hits >= 1
 
 
 

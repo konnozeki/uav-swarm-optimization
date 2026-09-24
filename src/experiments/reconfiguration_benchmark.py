@@ -1,11 +1,62 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from datetime import datetime, timezone
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
 from ..transition_visualization import save_transition_plot
+
+
+RESULT_KEY = ["problem", "algorithm", "seed"]
+
+
+def _atomic_write_csv(df: pd.DataFrame, path: Path) -> None:
+    """Replace a CSV only after its temporary copy is fully written."""
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    df.to_csv(temporary, index=False)
+    temporary.replace(path)
+
+
+def _load_completed_results(path: Path, *, resume: bool) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    if not resume:
+        raise FileExistsError(
+            f"{path} already exists; use a new output directory or enable resume"
+        )
+
+    existing = pd.read_csv(path)
+    missing = set(RESULT_KEY) - set(existing.columns)
+    if missing:
+        raise ValueError(
+            f"cannot resume {path}: missing key columns {sorted(missing)}"
+        )
+    duplicated = existing.duplicated(RESULT_KEY, keep=False)
+    if duplicated.any():
+        keys = existing.loc[duplicated, RESULT_KEY].to_dict("records")
+        raise ValueError(f"cannot resume {path}: duplicated result keys {keys[:5]}")
+    return existing
+
+
+def _record_failure(path: Path, key: dict, error: Exception) -> None:
+    records = []
+    if path.exists():
+        records = json.loads(path.read_text(encoding="utf-8"))
+    records.append({
+        **key,
+        "error_type": type(error).__name__,
+        "error": str(error),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    })
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(records, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _save_figures(df: pd.DataFrame, output_dir: Path) -> None:
@@ -86,25 +137,74 @@ def run_reconfiguration_benchmark(
     algorithms,
     seeds,
     output_dir: str | Path,
+    *,
+    resume: bool = True,
 ):
-    """Benchmark static-then-transition against joint transition-aware search."""
+    """Benchmark algorithms and persist every completed run for safe resume."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    rows = []
+    results_path = output_dir / "results.csv"
+    failures_path = output_dir / "failures.json"
+    existing = _load_completed_results(results_path, resume=resume)
+    rows = existing.to_dict("records")
+    completed = {
+        (str(row["problem"]), str(row["algorithm"]), int(row["seed"]))
+        for row in rows
+    }
     trajectory_dir = output_dir / "trajectory_figures"
     trajectory_dir.mkdir(parents=True, exist_ok=True)
 
-    # Materialize seeds once because callers may pass range/generators.
+    # Materialize inputs once because callers may pass ranges/generators.
+    problems = list(problems)
+    algorithms = list(algorithms)
     seed_values = list(seeds)
+    if not seed_values:
+        raise ValueError("seeds must contain at least one value")
+    problem_names = [problem.name for problem in problems]
+    algorithm_names = [algorithm.name for algorithm in algorithms]
+    if len(set(problem_names)) != len(problem_names):
+        raise ValueError("problem names must be unique")
+    if len(set(algorithm_names)) != len(algorithm_names):
+        raise ValueError("algorithm names must be unique")
+    if len(set(seed_values)) != len(seed_values):
+        raise ValueError("seed values must be unique")
+    expected = {
+        (problem_name, algorithm_name, int(seed))
+        for problem_name in problem_names
+        for algorithm_name in algorithm_names
+        for seed in seed_values
+    }
+    unexpected = completed - expected
+    if unexpected:
+        raise ValueError(
+            "cannot resume results containing cases outside this experiment: "
+            f"{sorted(unexpected)[:5]}"
+        )
 
     for problem in problems:
         for algorithm in algorithms:
             for seed in seed_values:
-                solution, runtime = algorithm.solve(
-                    problem,
-                    seed=seed,
-                )
+                result_key = (problem.name, algorithm.name, int(seed))
+                if result_key in completed:
+                    print(
+                        f"{problem.name:32s} | {algorithm.name:26s} | "
+                        f"seed={seed:2d} | resumed"
+                    )
+                    continue
+
+                try:
+                    solution, runtime = algorithm.solve(
+                        problem,
+                        seed=seed,
+                    )
+                except Exception as error:
+                    _record_failure(
+                        failures_path,
+                        dict(zip(RESULT_KEY, result_key)),
+                        error,
+                    )
+                    raise
                 metrics = solution.evaluation
 
                 row = {
@@ -122,7 +222,6 @@ def run_reconfiguration_benchmark(
                     "runtime_sec": runtime,
                     **metrics.to_dict(),
                 }
-                rows.append(row)
 
                 # Save one representative trajectory per problem/algorithm.
                 # Full multi-seed visualization would create hundreds of files
@@ -149,6 +248,10 @@ def run_reconfiguration_benchmark(
                         ),
                     )
 
+                rows.append(row)
+                completed.add(result_key)
+                _atomic_write_csv(pd.DataFrame(rows), results_path)
+
                 print(
                     f"{problem.name:32s} | "
                     f"{algorithm.name:26s} | "
@@ -160,8 +263,15 @@ def run_reconfiguration_benchmark(
                     f"{runtime:.2f}s"
                 )
 
+    missing = expected - completed
+    if missing:
+        raise RuntimeError(
+            f"benchmark finished with {len(missing)} missing result rows"
+        )
+
     df = pd.DataFrame(rows)
-    df.to_csv(output_dir / "results.csv", index=False)
+    df = df.sort_values(RESULT_KEY).reset_index(drop=True)
+    _atomic_write_csv(df, results_path)
 
     summary = (
         df.groupby(
@@ -195,7 +305,7 @@ def run_reconfiguration_benchmark(
         )
     )
 
-    summary.to_csv(output_dir / "summary.csv", index=False)
+    _atomic_write_csv(summary, output_dir / "summary.csv")
     _save_figures(df, output_dir)
 
     return df, summary

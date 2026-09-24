@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..problem import Scenario
+from ..problem import Scenario, DEFAULT_MIN_SEPARATION
 from ..obstacles import AxisAlignedRectangle
 from ..reconfiguration import ReconfigurationProblem
 from ..scenarios import make_scenario
@@ -34,7 +34,7 @@ def quick_reconfiguration_profile() -> list[ReconfigurationProblem]:
             n_targets=90,
             communication_radius=rc,
             sensing_radius=175.0,
-            min_separation=55.0,
+            min_separation=DEFAULT_MIN_SEPARATION,
         )
 
         # Radius 0.48*Rc keeps neighboring vertices of a six-UAV ring well
@@ -97,7 +97,7 @@ def stress_reconfiguration_profile() -> list[ReconfigurationProblem]:
                 n_targets=110,
                 communication_radius=rc,
                 sensing_radius=175.0,
-                min_separation=55.0,
+                min_separation=DEFAULT_MIN_SEPARATION,
             )
 
             start = ring_formation(
@@ -132,7 +132,7 @@ def showcase_reconfiguration_profile() -> list[ReconfigurationProblem]:
     - 10 UAVs instead of 6;
     - 180 sensing targets;
     - two dense target regions plus a bridge/corridor between them;
-    - tighter minimum separation, so crossing/packing decisions matter;
+    - 3 m hard collision clearance, allowing compact transit formations;
     - a compact connected start formation below the sensing regions.
 
     It is not a statistical benchmark. The purpose is to exercise and visualize
@@ -194,13 +194,13 @@ def showcase_reconfiguration_profile() -> list[ReconfigurationProblem]:
         n_uavs=10,
         sensing_radius=150.0,
         communication_radius=215.0,
-        min_separation=75.0,
+        min_separation=DEFAULT_MIN_SEPARATION,
         seed=7300,
     )
 
     # A compact ring keeps the initial graph safely connected while making the
     # eventual move toward the two upper target regions non-trivial. With ten
-    # UAVs, adjacent ring spacing is about 96 units, above min_separation=75.
+    # UAVs, adjacent ring spacing is about 96 m; this is not a safety requirement.
     start = ring_formation(
         (500.0, 220.0),
         scenario.n_uavs,
@@ -243,4 +243,17 @@ def showcase_reconfiguration_profile() -> list[ReconfigurationProblem]:
             obstacles=obstacles,
             obstacle_clearance=18.0,
         )
+    ]
+
+
+def final_reconfiguration_profile() -> list[ReconfigurationProblem]:
+    """Deterministic CP3 evaluation set used for final evidence.
+
+    This deliberately combines the ordinary quick cases with the tighter
+    communication-radius stress cases. It is larger than the smoke/quick
+    profiles but still small enough to support 20--30 paired optimizer seeds.
+    """
+    return [
+        *quick_reconfiguration_profile(),
+        *stress_reconfiguration_profile(),
     ]

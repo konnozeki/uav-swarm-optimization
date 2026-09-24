@@ -171,6 +171,8 @@ class TransitionMetrics:
 
 def formation_connected(positions: np.ndarray, communication_radius: float) -> bool:
     """Return whether the unit-disk communication graph is connected."""
+    # Use the same numerical boundary as continuous segment certificates, so
+    # an accepted waypoint remains a valid measured start on the next tick.
     graph = communication_graph_from_positions(positions, communication_radius)
     return nx.is_connected(graph)
 
@@ -538,6 +540,24 @@ def evaluate_transition(
     ]
     discrete_connected_rate = float(np.mean(discrete_connected))
 
+    # A backbone certificate is stronger than sampled connectivity.  Establish
+    # it first so the normal proposed-planner path does not rebuild 9 NetworkX
+    # graphs per trajectory segment merely to rediscover an already proven
+    # invariant.  Sampling remains the diagnostic fallback for baselines.
+    backbone_certified = bool(
+        n_steps > 0
+        and len(solution.backbones) == n_steps
+        and all(
+            backbone_segment_certified(
+                trajectory[t],
+                trajectory[t + 1],
+                solution.backbones[t],
+                problem.communication_radius,
+            )
+            for t in range(n_steps)
+        )
+    )
+
     sampled_connected_checks = []
     minimum_separation = math.inf
     obstacle_segment_violations = 0
@@ -546,14 +566,17 @@ def evaluate_transition(
         start = trajectory[t]
         end = trajectory[t + 1]
 
-        sampled_connected_checks.append(
-            sampled_segment_connected(
-                start,
-                end,
-                problem.communication_radius,
-                samples=connectivity_samples_per_segment,
+        if backbone_certified:
+            sampled_connected_checks.append(True)
+        else:
+            sampled_connected_checks.append(
+                sampled_segment_connected(
+                    start,
+                    end,
+                    problem.communication_radius,
+                    samples=connectivity_samples_per_segment,
+                )
             )
-        )
         minimum_separation = min(
             minimum_separation,
             continuous_min_pair_distance(start, end),
@@ -623,19 +646,6 @@ def evaluate_transition(
         time_efficiency = 1.0
     else:
         time_efficiency = 0.0
-
-    backbone_certified = False
-
-    if n_steps > 0 and len(solution.backbones) == n_steps:
-        backbone_certified = all(
-            backbone_segment_certified(
-                trajectory[t],
-                trajectory[t + 1],
-                solution.backbones[t],
-                problem.communication_radius,
-            )
-            for t in range(n_steps)
-        )
 
     continuous_connectivity_ok = (
         backbone_certified

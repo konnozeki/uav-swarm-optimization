@@ -1,0 +1,810 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          -85.64553697999997,
+          30.205279719000032
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 250,
+        "latitude": 30.20527972,
+        "longitude": -85.64553698,
+        "post_impact_capacity": 0,
+        "shelter_id": 70832,
+        "shelter_name": "New Horizon Learning Center Special Needs",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.68855253399994,
+          30.392923438000025
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1,
+        "latitude": 30.39292344,
+        "longitude": -85.68855253000001,
+        "post_impact_capacity": 0,
+        "shelter_id": 70882,
+        "shelter_name": "Bozeman Learning Center Special Needs",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.56265546199995,
+          30.239984556000024
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1378,
+        "latitude": 30.23998456,
+        "longitude": -85.56265546,
+        "post_impact_capacity": 527,
+        "shelter_id": 133690,
+        "shelter_name": "TOMMY SMITH ELEMENTARY SCHOOL",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.61648887899997,
+          30.166716791000056
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1035,
+        "latitude": 30.16671679,
+        "longitude": -85.61648888,
+        "post_impact_capacity": 388,
+        "shelter_id": 133866,
+        "shelter_name": "RUTHERFORD HIGH SCHOOL",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.67670748199998,
+          30.182634790000066
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "Panama City",
+        "county_parish": "BAY",
+        "evacuation_capacity": 300,
+        "latitude": 30.18263479,
+        "longitude": -85.67670747999999,
+        "post_impact_capacity": 0,
+        "shelter_id": 134028,
+        "shelter_name": "Northside Elementary",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.62516733699994,
+          30.15071785200007
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1492,
+        "latitude": 30.15071785,
+        "longitude": -85.62516734,
+        "post_impact_capacity": 746,
+        "shelter_id": 134099,
+        "shelter_name": "MILLVILLE ELEMENTARY SCHOOL",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.56136943099995,
+          30.23993059700007
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1117,
+        "latitude": 30.239930599999997,
+        "longitude": -85.56136943,
+        "post_impact_capacity": 419,
+        "shelter_id": 134108,
+        "shelter_name": "MERRITT BROWN MIDDLE SCHOOL",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.65095089899995,
+          30.24533552200006
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "LYNN HAVEN",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1068,
+        "latitude": 30.24533552,
+        "longitude": -85.65095090000001,
+        "post_impact_capacity": 534,
+        "shelter_id": 134151,
+        "shelter_name": "LYNN HAVEN ELEMENTARY SCHOOL",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.62804516699998,
+          30.20239289500006
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1633,
+        "latitude": 30.2023929,
+        "longitude": -85.62804517000001,
+        "post_impact_capacity": 816,
+        "shelter_id": 134312,
+        "shelter_name": "Hiland Park Elementary School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.64959292199995,
+          30.202563767000072
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 970,
+        "latitude": 30.20256377,
+        "longitude": -85.64959292,
+        "post_impact_capacity": 0,
+        "shelter_id": 134340,
+        "shelter_name": "Haney Technical Center",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.56934641799995,
+          30.15290320400004
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1776,
+        "latitude": 30.152903199999997,
+        "longitude": -85.56934642,
+        "post_impact_capacity": 887,
+        "shelter_id": 134765,
+        "shelter_name": "Callaway Elementary School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.68855253399994,
+          30.392923438000025
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "Panama City",
+        "county_parish": "BAY",
+        "evacuation_capacity": 2500,
+        "latitude": 30.39292344,
+        "longitude": -85.68855253000001,
+        "post_impact_capacity": 0,
+        "shelter_id": 134793,
+        "shelter_name": "Deane Bozeman School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.66017933399996,
+          30.171000553000056
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 3719,
+        "latitude": 30.17100055,
+        "longitude": -85.66017933,
+        "post_impact_capacity": 1860,
+        "shelter_id": 134836,
+        "shelter_name": "Bay High School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.63387277399994,
+          30.174945587000025
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 350,
+        "latitude": 30.17494559,
+        "longitude": -85.63387277,
+        "post_impact_capacity": 350,
+        "shelter_id": 134837,
+        "shelter_name": "Bay County Fairgrounds",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.64533912899998,
+          30.211287190000064
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "LYNN HAVEN",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1351,
+        "latitude": 30.21128719,
+        "longitude": -85.64533913000001,
+        "post_impact_capacity": 703,
+        "shelter_id": 134898,
+        "shelter_name": "A Crawford Mosley High School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.64959292199995,
+          30.202563767000072
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 970,
+        "latitude": 30.20256377,
+        "longitude": -85.64959292,
+        "post_impact_capacity": 0,
+        "shelter_id": 134938,
+        "shelter_name": "Tom P Haney Technical School Special Needs",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.68855253399994,
+          30.392923438000025
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 250,
+        "latitude": 30.39292344,
+        "longitude": -85.68855253000001,
+        "post_impact_capacity": 0,
+        "shelter_id": 134957,
+        "shelter_name": "Special Needs Bozeman Cafeteria",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.61643659499998,
+          30.15739691500005
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "SPRINGFIELD",
+        "county_parish": "BAY",
+        "evacuation_capacity": 500,
+        "latitude": 30.15739692,
+        "longitude": -85.6164366,
+        "post_impact_capacity": 0,
+        "shelter_id": 340557,
+        "shelter_name": "Springfield Elementary",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.61643659499998,
+          30.159824900000046
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "Bay",
+        "evacuation_capacity": null,
+        "latitude": 30.1598249,
+        "longitude": -85.6164366,
+        "post_impact_capacity": null,
+        "shelter_id": 340645,
+        "shelter_name": "Everitt Middle School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.66731119499997,
+          30.167955103000054
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "Bay",
+        "evacuation_capacity": null,
+        "latitude": 30.1679551,
+        "longitude": -85.6673112,
+        "post_impact_capacity": null,
+        "shelter_id": 340646,
+        "shelter_name": "Jinks Middle School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.64547716899995,
+          30.14597719300008
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "Bay",
+        "evacuation_capacity": null,
+        "latitude": 30.14597719,
+        "longitude": -85.64547716999999,
+        "post_impact_capacity": null,
+        "shelter_id": 340647,
+        "shelter_name": "Merriam Cherry Street Elementary School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.69114942999994,
+          30.17587257400004
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 55,
+        "latitude": 30.17587257,
+        "longitude": -85.69114943000001,
+        "post_impact_capacity": 0,
+        "shelter_id": 340719,
+        "shelter_name": "M.K. Lewis School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.70854415899998,
+          30.182688691000067
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1062,
+        "latitude": 30.18268869,
+        "longitude": -85.70854416,
+        "post_impact_capacity": 0,
+        "shelter_id": 340720,
+        "shelter_name": "Lucille Moore Elementary School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.64564081699996,
+          30.236202021000054
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "LYNN HAVEN",
+        "county_parish": "BAY",
+        "evacuation_capacity": 139,
+        "latitude": 30.23620202,
+        "longitude": -85.64564082,
+        "post_impact_capacity": 0,
+        "shelter_id": 340734,
+        "shelter_name": "Mowat Middle School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.64550223399993,
+          30.21136664900007
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "LYNN HAVEN",
+        "county_parish": "BAY",
+        "evacuation_capacity": 628,
+        "latitude": 30.211366650000002,
+        "longitude": -85.64550223,
+        "post_impact_capacity": 0,
+        "shelter_id": 340735,
+        "shelter_name": "New Horizons Learning Center",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.69161559499997,
+          30.17001021200008
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 515,
+        "latitude": 30.17001021,
+        "longitude": -85.69161559999999,
+        "post_impact_capacity": 0,
+        "shelter_id": 340736,
+        "shelter_name": "Oakland Terrace Elementary School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.48449888099998,
+          30.196183907000034
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 240,
+        "latitude": 30.196183910000002,
+        "longitude": -85.48449887999999,
+        "post_impact_capacity": 0,
+        "shelter_id": 340737,
+        "shelter_name": "Parker Elementary School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.63767601199999,
+          30.166348518000063
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 427,
+        "latitude": 30.16634852,
+        "longitude": -85.63767601,
+        "post_impact_capacity": 0,
+        "shelter_id": 340738,
+        "shelter_name": "Patterson Elementary",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.64171179999994,
+          30.165340822000076
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 202,
+        "latitude": 30.165340819999997,
+        "longitude": -85.6417118,
+        "post_impact_capacity": 0,
+        "shelter_id": 340745,
+        "shelter_name": "Rosenwald Middle School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.51501663299996,
+          30.38290322100005
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "YOUNGSTOWN",
+        "county_parish": "BAY",
+        "evacuation_capacity": 785,
+        "latitude": 30.38290322,
+        "longitude": -85.51501663,
+        "post_impact_capacity": 0,
+        "shelter_id": 340746,
+        "shelter_name": "Waller Elementary School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.62162600799996,
+          30.174757234000026
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY",
+        "county_parish": "BAY",
+        "evacuation_capacity": 464,
+        "latitude": 30.17475723,
+        "longitude": -85.62162601,
+        "post_impact_capacity": 232,
+        "shelter_id": 346050,
+        "shelter_name": "Cedar Grove Elementary School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.80793699999998,
+          30.202890000000025
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY BEACH",
+        "county_parish": "BAY",
+        "evacuation_capacity": 800,
+        "latitude": 30.20289,
+        "longitude": -85.80793700000001,
+        "post_impact_capacity": 400,
+        "shelter_id": 362780,
+        "shelter_name": "Breakfast Point Academy",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.81276999999994,
+          30.204680000000053
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PANAMA CITY BEACH",
+        "county_parish": "BAY",
+        "evacuation_capacity": 1736,
+        "latitude": 30.20468,
+        "longitude": -85.81277,
+        "post_impact_capacity": 868,
+        "shelter_id": 362831,
+        "shelter_name": "JR Arnold High School",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.60513999999995,
+          30.129760000000033
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "PARKER",
+        "county_parish": "BAY",
+        "evacuation_capacity": 232,
+        "latitude": 30.12976,
+        "longitude": -85.60513999999999,
+        "post_impact_capacity": 116,
+        "shelter_id": 363870,
+        "shelter_name": "Parker Community Center",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.59240299999999,
+          30.257998000000043
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "Panama City",
+        "county_parish": "Bay",
+        "evacuation_capacity": null,
+        "latitude": 30.257998,
+        "longitude": -85.592403,
+        "post_impact_capacity": null,
+        "shelter_id": 365186,
+        "shelter_name": "Deer Point Elementary",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.62626299999994,
+          30.200713000000064
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "Panama City",
+        "county_parish": "Bay",
+        "evacuation_capacity": null,
+        "latitude": 30.200713,
+        "longitude": -85.626263,
+        "post_impact_capacity": null,
+        "shelter_id": 365370,
+        "shelter_name": "Hiland Park Baptist Church",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.63408539999995,
+          30.174469600000066
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "Panama City",
+        "county_parish": "Bay",
+        "evacuation_capacity": null,
+        "latitude": 30.1744696,
+        "longitude": -85.6340854,
+        "post_impact_capacity": null,
+        "shelter_id": 365371,
+        "shelter_name": "Central Panhandle Fairgrounds",
+        "state": "FL"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -85.88898849999998,
+          30.225759500000038
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "city": "Panama City Beach",
+        "county_parish": "Bay",
+        "evacuation_capacity": null,
+        "latitude": 30.2257595,
+        "longitude": -85.88898850000001,
+        "post_impact_capacity": null,
+        "shelter_id": 366032,
+        "shelter_name": "Gulf Beach Presbyterian Church",
+        "state": "FL"
+      },
+      "type": "Feature"
+    }
+  ],
+  "source": {
+    "agency": "Federal Emergency Management Agency",
+    "query": "state='FL' AND UPPER(county_parish)='BAY'",
+    "retrieved_at": "2026-09-24T03:54:29.810808+00:00",
+    "service": "https://gis.fema.gov/arcgis/rest/services/NSS/FEMA_NSS/FeatureServer/5/query",
+    "spatial_reference": "WGS84 / EPSG:4326"
+  },
+  "type": "FeatureCollection"
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..transition import TransitionProblem
+from ..problem import DEFAULT_MIN_SEPARATION
 
 
 DEFAULT_WIDTH = 1000.0
@@ -66,7 +67,7 @@ def quick_transition_profile() -> list[TransitionProblem]:
             start_positions=ring_formation((250, 500), n, 130),
             goal_positions=ring_formation((750, 500), n, 130),
             communication_radius=220,
-            min_separation=55,
+            min_separation=DEFAULT_MIN_SEPARATION,
             max_speed=40,
         ),
         TransitionProblem(
@@ -76,7 +77,7 @@ def quick_transition_profile() -> list[TransitionProblem]:
             start_positions=ring_formation((250, 250), n, 125),
             goal_positions=ring_formation((750, 750), n, 125),
             communication_radius=215,
-            min_separation=55,
+            min_separation=DEFAULT_MIN_SEPARATION,
             max_speed=40,
         ),
         TransitionProblem(
@@ -86,7 +87,7 @@ def quick_transition_profile() -> list[TransitionProblem]:
             start_positions=ring_formation((300, 500), n, 80),
             goal_positions=ring_formation((700, 500), n, 170),
             communication_radius=225,
-            min_separation=55,
+            min_separation=DEFAULT_MIN_SEPARATION,
             max_speed=40,
         ),
         TransitionProblem(
@@ -96,7 +97,7 @@ def quick_transition_profile() -> list[TransitionProblem]:
             start_positions=ring_formation((300, 500), n, 125),
             goal_positions=line_formation((700, 500), n, 110),
             communication_radius=220,
-            min_separation=55,
+            min_separation=DEFAULT_MIN_SEPARATION,
             max_speed=40,
         ),
         TransitionProblem(
@@ -111,7 +112,7 @@ def quick_transition_profile() -> list[TransitionProblem]:
                 angle=np.pi / 2.0,
             ),
             communication_radius=215,
-            min_separation=55,
+            min_separation=DEFAULT_MIN_SEPARATION,
             max_speed=40,
         ),
     ]
@@ -147,7 +148,7 @@ def stress_transition_profile() -> list[TransitionProblem]:
                     phase=np.pi / n,
                 ),
                 communication_radius=rc,
-                min_separation=55,
+                min_separation=DEFAULT_MIN_SEPARATION,
                 max_speed=40,
             )
         )
@@ -175,7 +176,7 @@ def stress_transition_profile() -> list[TransitionProblem]:
                     angle=np.pi / 2.0,
                 ),
                 communication_radius=rc,
-                min_separation=55,
+                min_separation=DEFAULT_MIN_SEPARATION,
                 max_speed=40,
             )
         )

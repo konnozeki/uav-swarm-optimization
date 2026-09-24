@@ -76,6 +76,11 @@ def test_transition_aware_ga_returns_evaluable_solution(simple_scenario):
         2,
     )
     assert np.isfinite(solution.evaluation.joint_fitness)
+    # Real-time search may use lower-bound ranking internally, but must never
+    # return that estimate in place of a certified transition.
+    assert solution.evaluation.transition_attempted
+    assert solution.evaluation.transition_feasible
+    assert solution.transition_solution is not None
 
 
 

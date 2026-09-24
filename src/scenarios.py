@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .problem import Scenario
+from .problem import Scenario, DEFAULT_MIN_SEPARATION
 
 
 DEFAULT_WIDTH = 1000.0
@@ -59,7 +59,7 @@ def make_scenario(
     n_targets: int,
     communication_radius: float,
     sensing_radius: float = 175.0,
-    min_separation: float = 55.0,
+    min_separation: float = DEFAULT_MIN_SEPARATION,
     width: float = DEFAULT_WIDTH,
     height: float = DEFAULT_HEIGHT,
 ) -> Scenario:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import heapq
 import math
 
@@ -323,6 +324,57 @@ def _visibility_nodes(
     return nodes
 
 
+@lru_cache(maxsize=128)
+def _cached_corner_visibility_graph(
+    obstacles: tuple[AxisAlignedRectangle, ...],
+    clearance: float,
+    width: float,
+    height: float,
+) -> tuple[
+    tuple[tuple[float, float], ...],
+    tuple[tuple[tuple[int, float], ...], ...],
+]:
+    """Cache obstacle-corner visibility that is constant during planning.
+
+    Only the current UAV position and its goal move between planner steps. The
+    obstacle corners and every visible corner-to-corner edge remain unchanged,
+    so rebuilding that quadratic graph for every UAV at every step is wasteful.
+    """
+    placeholder = np.zeros(2, dtype=float)
+    nodes = _visibility_nodes(
+        placeholder,
+        placeholder,
+        obstacles,
+        clearance,
+        width,
+        height,
+    )[2:]
+    coordinates = tuple(
+        (float(node[0]), float(node[1]))
+        for node in nodes
+    )
+    adjacency: list[list[tuple[int, float]]] = [
+        [] for _ in coordinates
+    ]
+
+    for i in range(len(coordinates)):
+        first = np.asarray(coordinates[i], dtype=float)
+        for j in range(i + 1, len(coordinates)):
+            second = np.asarray(coordinates[j], dtype=float)
+            if not line_obstacle_free(
+                first,
+                second,
+                obstacles,
+                clearance,
+            ):
+                continue
+            distance = float(np.linalg.norm(first - second))
+            adjacency[i].append((j, distance))
+            adjacency[j].append((i, distance))
+
+    return coordinates, tuple(tuple(edges) for edges in adjacency)
+
+
 def next_visibility_waypoint(
     start: np.ndarray,
     goal: np.ndarray,
@@ -334,9 +386,8 @@ def next_visibility_waypoint(
     """Return the first waypoint on a shortest obstacle-free visibility path.
 
     With axis-aligned rectangles, their expanded corners are sufficient
-    visibility-graph vertices for a simple polygonal detour. The graph is tiny
-    in our prototype, so rebuilding it per UAV and per step is acceptable and
-    keeps the planner easy to inspect.
+    visibility-graph vertices for a simple polygonal detour. Corner-to-corner
+    visibility is cached; each call only connects the moving start and goal.
     """
     start = np.asarray(start, dtype=float)
     goal = np.asarray(goal, dtype=float)
@@ -349,6 +400,94 @@ def next_visibility_waypoint(
     ):
         return goal.copy()
 
+    corner_coordinates, corner_adjacency = _cached_corner_visibility_graph(
+        obstacles,
+        float(clearance),
+        float(width),
+        float(height),
+    )
+    corners = [
+        np.asarray(point, dtype=float)
+        for point in corner_coordinates
+    ]
+    start_links: list[tuple[int, float]] = []
+    goal_links: dict[int, float] = {}
+
+    for corner_index, corner in enumerate(corners):
+        node_index = corner_index + 2
+        if line_obstacle_free(
+            start,
+            corner,
+            obstacles,
+            clearance,
+        ):
+            start_links.append((
+                node_index,
+                float(np.linalg.norm(start - corner)),
+            ))
+        if line_obstacle_free(
+            corner,
+            goal,
+            obstacles,
+            clearance,
+        ):
+            goal_links[corner_index] = float(
+                np.linalg.norm(corner - goal)
+            )
+
+    n = len(corners) + 2
+    distances = [math.inf] * n
+    previous = [-1] * n
+    distances[0] = 0.0
+    queue = [(0.0, 0)]
+
+    while queue:
+        distance, node = heapq.heappop(queue)
+        if distance > distances[node] + GEOMETRY_TOL:
+            continue
+        if node == 1:
+            break
+
+        if node == 0:
+            neighbours = start_links
+        else:
+            corner_index = node - 2
+            neighbours = [
+                (other + 2, weight)
+                for other, weight in corner_adjacency[corner_index]
+            ]
+            if corner_index in goal_links:
+                neighbours.append((1, goal_links[corner_index]))
+
+        for neighbour, weight in neighbours:
+            candidate = distance + weight
+            if candidate + GEOMETRY_TOL < distances[neighbour]:
+                distances[neighbour] = candidate
+                previous[neighbour] = node
+                heapq.heappush(queue, (candidate, neighbour))
+
+    if not math.isfinite(distances[1]):
+        return None
+
+    node = 1
+    while previous[node] not in (-1, 0):
+        node = previous[node]
+
+    if previous[node] == -1 or node < 2:
+        return None
+
+    return corners[node - 2].copy()
+
+
+def _legacy_next_visibility_waypoint(
+    start: np.ndarray,
+    goal: np.ndarray,
+    obstacles: tuple[AxisAlignedRectangle, ...],
+    clearance: float,
+    width: float,
+    height: float,
+) -> np.ndarray | None:
+    """Previous full-graph implementation retained for equivalence tests."""
     nodes = _visibility_nodes(
         start,
         goal,

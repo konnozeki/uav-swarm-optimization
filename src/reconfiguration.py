@@ -265,6 +265,8 @@ def evaluate_reconfiguration(
     objective_config: ReconfigurationObjectiveConfig = (
         DEFAULT_RECONFIGURATION_OBJECTIVE
     ),
+    *,
+    transition_solution: TransitionSolution | None = None,
 ) -> tuple[ReconfigurationEvaluation, TransitionSolution | None]:
     """Evaluate a candidate formation B from the current formation A.
 
@@ -311,9 +313,19 @@ def evaluate_reconfiguration(
 
     try:
         transition_problem = problem.transition_problem(goal_positions)
-        transition_solution = transition_planner.solve(
-            transition_problem
-        )
+        if transition_solution is None:
+            transition_solution = transition_planner.solve(transition_problem)
+        # A supplied route may be reused, but must still belong to this exact
+        # destination. This also prevents scoring the requested B after a
+        # flexible-endpoint planner actually reached a different B'.
+        assignment = transition_solution.assignment
+        if (not np.array_equal(np.sort(assignment), np.arange(len(goal_positions)))
+                or not np.allclose(transition_solution.assigned_goals,
+                                   goal_positions[assignment], rtol=0, atol=1e-9)):
+            raise ValueError("transition assignment does not match goal_positions")
+        if (not problem.allow_reassignment
+                and not np.array_equal(assignment, np.arange(len(goal_positions)))):
+            raise ValueError("reassignment is disabled")
         transition_metrics: TransitionMetrics = evaluate_transition(
             transition_problem,
             transition_solution,

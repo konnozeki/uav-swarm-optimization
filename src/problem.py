@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Optional
 import numpy as np
 
+DEFAULT_MIN_SEPARATION = 3.0  # Metres: hard collision clearance, not formation spacing.
+
 
 @dataclass(frozen=True)
 class Scenario:
