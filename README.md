@@ -66,6 +66,7 @@ Three external case families are supported through a local conversion step:
 - `osm_poi`: POI/demand points from an OSM-style CSV, with optional no-deploy obstacles.
 - `opencellid`: cell-tower or cellular infrastructure points from an OpenCellID-style CSV.
 - `mobility`: mobility demand points from a trajectory CSV or GeoLife `.plt` directory.
+- `c2a_pose`: C2A YOLO pose labels, converted from normalized bounding-box centers.
 
 The converter expects local raw files and writes frozen scenario JSON files:
 
@@ -97,8 +98,18 @@ python prepare_external_datasets.py `
   --opencellid data/external_raw/opencellid.csv `
   --mobility-csv data/external_raw/mobility.csv `
   --geolife-dir data/external_raw/Geolife `
+  --c2a-label-dir "c2a/C2A_Dataset/new_dataset3/All labels with Pose information/labels" `
   --cases 10 `
   --targets-per-case 120 `
+  --output-dir datasets/external_scenarios
+```
+
+For C2A only:
+
+```powershell
+python prepare_external_datasets.py `
+  --c2a-label-dir "c2a/C2A_Dataset/new_dataset3/All labels with Pose information/labels" `
+  --c2a-max-cases 100 `
   --output-dir datasets/external_scenarios
 ```
 

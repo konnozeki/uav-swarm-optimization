@@ -24,10 +24,14 @@ import argparse
 import csv
 import os
 from pathlib import Path
+import tempfile
 import time
 import warnings
 
-os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+os.environ.setdefault(
+    "MPLCONFIGDIR",
+    str(Path(tempfile.gettempdir()) / "matplotlib"),
+)
 
 import matplotlib
 matplotlib.use("Agg")

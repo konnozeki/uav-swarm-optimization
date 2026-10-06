@@ -25,6 +25,7 @@ class ConnectedFrontierConfig:
     connectivity_bonus: float = 0.01
     local_rounds: int = 12
     potential_decay_factor: float = 0.75
+    multi_start_roots: int = 5
 
 
 class ConnectedFrontierLeafSwap:
@@ -52,6 +53,8 @@ class ConnectedFrontierLeafSwap:
             raise ValueError("local_rounds must be non-negative")
         if config.potential_decay_factor <= 0:
             raise ValueError("potential_decay_factor must be positive")
+        if config.multi_start_roots < 1:
+            raise ValueError("multi_start_roots must be at least 1")
         self.config = config
 
     @staticmethod
@@ -147,11 +150,107 @@ class ConnectedFrontierLeafSwap:
         )
         return coverage, secondary
 
-    def _construct(
+    def _root_candidates(
         self,
         scenario: Scenario,
         points: np.ndarray,
         data: dict,
+    ) -> list[int]:
+        covers = data["covers"]
+        potential = data["potential"]
+        weights = self._weights(scenario)
+        total = max(float(np.sum(weights)), 1e-12)
+
+        centroid = np.average(
+            scenario.targets,
+            axis=0,
+            weights=weights,
+        )
+        centroid_seed = int(
+            np.argmin(
+                np.linalg.norm(
+                    points - centroid[None, :],
+                    axis=1,
+                )
+            )
+        )
+
+        direct = covers @ weights / total
+        smooth = potential @ weights / total
+        pool_size = min(
+            len(points),
+            max(
+                self.config.multi_start_roots * 4,
+                self.config.multi_start_roots + 4,
+            ),
+        )
+
+        top_direct = [
+            int(candidate_id)
+            for candidate_id in np.argsort(direct)[-pool_size:][::-1]
+        ]
+        top_smooth = [
+            int(candidate_id)
+            for candidate_id in np.argsort(smooth)[-pool_size:][::-1]
+        ]
+
+        # Add spatially diverse roots. This catches split-cluster cases where
+        # the weighted centroid lies in empty space and dense starts all come
+        # from the same side of the map.
+        distances_to_targets = np.linalg.norm(
+            points[:, None, :] - scenario.targets[None, :, :],
+            axis=2,
+        )
+        nearest_target = np.min(distances_to_targets, axis=1)
+        target_like = nearest_target <= 1e-8
+        if np.any(target_like):
+            target_ids = np.flatnonzero(target_like)
+        else:
+            target_ids = np.arange(len(points))
+
+        diverse: list[int] = []
+        first = int(target_ids[np.argmax(direct[target_ids])])
+        diverse.append(first)
+        while len(diverse) < self.config.multi_start_roots and len(diverse) < len(target_ids):
+            selected_points = points[np.asarray(diverse, dtype=int)]
+            distance_to_selected = np.min(
+                np.linalg.norm(
+                    points[target_ids, None, :] - selected_points[None, :, :],
+                    axis=2,
+                ),
+                axis=1,
+            )
+            score = distance_to_selected / max(scenario.communication_radius, 1e-12)
+            score += 0.05 * direct[target_ids]
+            for existing in diverse:
+                score[target_ids == existing] = -np.inf
+            diverse.append(int(target_ids[int(np.argmax(score))]))
+
+        seeds: list[int] = []
+
+        def add_seed(candidate_id: int) -> None:
+            if candidate_id not in seeds:
+                seeds.append(candidate_id)
+
+        add_seed(centroid_seed)
+        if top_direct:
+            add_seed(top_direct[0])
+        if top_smooth:
+            add_seed(top_smooth[0])
+        for cid in diverse:
+            add_seed(cid)
+        for candidates in (top_direct, top_smooth):
+            for cid in candidates:
+                add_seed(cid)
+
+        return seeds[: self.config.multi_start_roots]
+
+    def _construct_from_root(
+        self,
+        scenario: Scenario,
+        points: np.ndarray,
+        data: dict,
+        root: int,
     ) -> list[int]:
         covers = data["covers"]
         potential = data["potential"]
@@ -160,23 +259,7 @@ class ConnectedFrontierLeafSwap:
         weights = self._weights(scenario)
         total = max(float(np.sum(weights)), 1e-12)
 
-        # Start near the weighted target centroid instead of greedily
-        # dropping the first UAV into the densest cluster. A central root gives
-        # the connected frontier room to grow toward several separated clusters
-        # without spending multiple UAVs on relay points from one extreme.
-        centroid = np.average(
-            scenario.targets,
-            axis=0,
-            weights=weights,
-        )
-        seed = int(
-            np.argmin(
-                np.linalg.norm(
-                    points - centroid[None, :],
-                    axis=1,
-                )
-            )
-        )
+        seed = int(root)
         selected = [seed]
 
         counts = covers[seed].astype(int)
@@ -254,6 +337,52 @@ class ConnectedFrontierLeafSwap:
             )
 
         return selected
+
+    def _construct(
+        self,
+        scenario: Scenario,
+        points: np.ndarray,
+        data: dict,
+    ) -> list[int]:
+        best_selected: list[int] | None = None
+        best_key: tuple[float, float] | None = None
+        last_error: RuntimeError | None = None
+        weights = self._weights(scenario)
+
+        for root in self._root_candidates(
+            scenario,
+            points,
+            data,
+        ):
+            try:
+                selected = self._construct_from_root(
+                    scenario,
+                    points,
+                    data,
+                    root,
+                )
+            except RuntimeError as failure:
+                last_error = failure
+                continue
+
+            candidate_key = self._solution_key(
+                data["covers"],
+                data["potential"],
+                selected,
+                weights,
+            )
+            if best_key is None or candidate_key > best_key:
+                best_key = candidate_key
+                best_selected = selected
+
+        if best_selected is None:
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError(
+                "ConnectedFrontierLeafSwap could not construct a formation"
+            )
+
+        return best_selected
 
     @staticmethod
     def _spanning_tree_leaves(
@@ -432,17 +561,49 @@ class ConnectedFrontierLeafSwap:
             points,
         )
 
-        selected = self._construct(
+        weights = self._weights(scenario)
+        selected: list[int] | None = None
+        selected_key: tuple[float, float] | None = None
+        last_error: RuntimeError | None = None
+        for root in self._root_candidates(
             scenario,
             points,
             data,
-        )
-        selected = self._leaf_swap(
-            scenario,
-            points,
-            data,
-            selected,
-        )
+        ):
+            try:
+                candidate = self._construct_from_root(
+                    scenario,
+                    points,
+                    data,
+                    root,
+                )
+                candidate = self._leaf_swap(
+                    scenario,
+                    points,
+                    data,
+                    candidate,
+                )
+            except RuntimeError as failure:
+                last_error = failure
+                continue
+
+            candidate_key = self._solution_key(
+                data["covers"],
+                data["potential"],
+                candidate,
+                weights,
+            )
+            if selected_key is None or candidate_key > selected_key:
+                selected = candidate
+                selected_key = candidate_key
+
+        if selected is None:
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError(
+                "ConnectedFrontierLeafSwap could not construct a formation"
+            )
+
         positions = points[np.asarray(selected, dtype=int)]
 
         metrics = evaluate_positions(

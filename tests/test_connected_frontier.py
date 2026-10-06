@@ -72,3 +72,54 @@ def test_connected_frontier_is_deterministic_across_solver_seeds():
     second, _ = algorithm.solve(s, seed=999)
 
     assert np.array_equal(first.positions, second.positions)
+
+
+def test_multi_start_improves_centroid_gap_case_for_cfg():
+    targets = []
+    for center in (
+        np.array([150.0, 250.0]),
+        np.array([850.0, 250.0]),
+        np.array([150.0, 750.0]),
+        np.array([850.0, 750.0]),
+    ):
+        rng = np.random.default_rng(int(np.sum(center)))
+        targets.extend(center + rng.normal(0.0, 20.0, size=(18, 2)))
+    targets = np.clip(np.asarray(targets, dtype=float), 0.0, 1000.0)
+    s = Scenario(
+        name="centroid_gap",
+        pattern="centroid_gap",
+        width=1000.0,
+        height=1000.0,
+        targets=targets,
+        target_weights=np.ones(len(targets)),
+        n_uavs=4,
+        sensing_radius=120.0,
+        communication_radius=310.0,
+        min_separation=25.0,
+        seed=0,
+    )
+
+    centroid_only, _ = ConnectedFrontierLeafSwap(
+        ConnectedFrontierConfig(
+            grid_size=12,
+            local_rounds=0,
+            multi_start_roots=1,
+        )
+    ).solve(s)
+    multi_start, _ = ConnectedFrontierLeafSwap(
+        ConnectedFrontierConfig(
+            grid_size=12,
+            local_rounds=0,
+            multi_start_roots=5,
+        )
+    ).solve(s)
+
+    centroid_metrics = evaluate(s, centroid_only)
+    multi_start_metrics = evaluate(s, multi_start)
+
+    assert centroid_metrics.feasible
+    assert multi_start_metrics.feasible
+    assert (
+        multi_start_metrics.weighted_coverage_ratio
+        > centroid_metrics.weighted_coverage_ratio
+    )

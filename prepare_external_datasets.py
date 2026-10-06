@@ -9,12 +9,14 @@ Supported lightweight inputs:
   * OpenCellID CSV: lat, lon, optional radio/samples/range columns.
   * Mobility CSV: lat, lon, optional time/user/weight columns.
   * GeoLife directory: recursive .plt files are read as mobility points.
+  * C2A YOLO pose labels: class x_center y_center width height pose.
 
 Examples:
     python prepare_external_datasets.py --osm-poi data/external_raw/osm_poi.csv
     python prepare_external_datasets.py --opencellid data/external_raw/cell_towers.csv
     python prepare_external_datasets.py --mobility-csv data/external_raw/mobility.csv
     python prepare_external_datasets.py --geolife-dir data/external_raw/Geolife
+    python prepare_external_datasets.py --c2a-label-dir c2a/C2A_Dataset/new_dataset3/train/labels
 """
 from __future__ import annotations
 
@@ -49,6 +51,14 @@ POI_CATEGORY_WEIGHTS = {
     "marketplace": 1.5,
     "supermarket": 1.4,
     "shop": 1.2,
+}
+
+C2A_POSE_WEIGHTS = {
+    0: 2.0,  # bent
+    1: 2.3,  # kneeling
+    2: 3.0,  # lying
+    3: 1.8,  # sitting
+    4: 1.2,  # upright
 }
 
 
@@ -169,6 +179,76 @@ def mobility_weight(row: dict) -> float:
     return explicit if explicit is not None and explicit > 0 else 1.0
 
 
+def read_c2a_label_file(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    targets: list[tuple[float, float]] = []
+    weights: list[float] = []
+    with path.open("r", encoding="utf-8", errors="ignore") as stream:
+        for line in stream:
+            parts = line.strip().split()
+            if len(parts) < 6:
+                continue
+            x_center = _float_or_none(parts[1])
+            y_center = _float_or_none(parts[2])
+            pose_value = _float_or_none(parts[5])
+            if x_center is None or y_center is None or pose_value is None:
+                continue
+            if not (0.0 <= x_center <= 1.0 and 0.0 <= y_center <= 1.0):
+                continue
+            pose = int(pose_value)
+            targets.append(
+                (
+                    x_center * DEFAULT_WIDTH,
+                    y_center * DEFAULT_HEIGHT,
+                )
+            )
+            weights.append(C2A_POSE_WEIGHTS.get(pose, 1.0))
+
+    return (
+        np.asarray(targets, dtype=float),
+        np.asarray(weights, dtype=float),
+    )
+
+
+def write_c2a_cases(
+    *,
+    label_dir: Path,
+    output_dir: Path,
+    max_cases: int | None,
+    min_targets: int,
+) -> list[Path]:
+    if min_targets < 1:
+        raise ValueError("min_targets must be positive")
+
+    written: list[Path] = []
+    files = sorted(label_dir.rglob("*.txt"))
+    for file_id, label_path in enumerate(files):
+        targets, weights = read_c2a_label_file(label_path)
+        if len(targets) < min_targets:
+            continue
+
+        scenario = Scenario(
+            name=label_path.stem,
+            pattern="external_c2a_pose",
+            width=DEFAULT_WIDTH,
+            height=DEFAULT_HEIGHT,
+            targets=targets,
+            target_weights=np.maximum(weights, 1e-6),
+            n_uavs=DEFAULT_N_UAVS,
+            sensing_radius=DEFAULT_RS,
+            communication_radius=DEFAULT_RC,
+            min_separation=DEFAULT_MIN_SEPARATION,
+            seed=len(written),
+        )
+        path = output_dir / "c2a_pose" / f"{scenario.name}.json"
+        write_scenario(path, scenario)
+        written.append(path)
+
+        if max_cases is not None and len(written) >= max_cases:
+            break
+
+    return written
+
+
 def deterministic_case_indices(
     n_points: int,
     *,
@@ -284,6 +364,17 @@ def main() -> None:
     parser.add_argument("--opencellid", type=Path)
     parser.add_argument("--mobility-csv", type=Path)
     parser.add_argument("--geolife-dir", type=Path)
+    parser.add_argument(
+        "--c2a-label-dir",
+        type=Path,
+        help="Directory containing C2A YOLO pose .txt labels",
+    )
+    parser.add_argument(
+        "--c2a-max-cases",
+        type=int,
+        help="Optional cap on converted C2A label files",
+    )
+    parser.add_argument("--c2a-min-targets", type=int, default=1)
     parser.add_argument("--output-dir", type=Path, default=Path("datasets/external_scenarios"))
     parser.add_argument("--cases", type=int, default=10)
     parser.add_argument("--targets-per-case", type=int, default=120)
@@ -298,6 +389,11 @@ def main() -> None:
     opencellid = existing_path(args.opencellid, "OpenCellID CSV")
     mobility_csv = existing_path(args.mobility_csv, "mobility CSV")
     geolife_dir = existing_path(args.geolife_dir, "GeoLife directory")
+    c2a_label_dir = existing_path(args.c2a_label_dir, "C2A label directory")
+    if args.c2a_max_cases is not None and args.c2a_max_cases < 1:
+        parser.error("--c2a-max-cases must be positive")
+    if args.c2a_min_targets < 1:
+        parser.error("--c2a-min-targets must be positive")
 
     total = 0
     if osm_poi:
@@ -347,6 +443,16 @@ def main() -> None:
         )
         total += len(written)
         print(f"wrote {len(written)} mobility scenarios")
+
+    if c2a_label_dir:
+        written = write_c2a_cases(
+            label_dir=c2a_label_dir,
+            output_dir=args.output_dir,
+            max_cases=args.c2a_max_cases,
+            min_targets=args.c2a_min_targets,
+        )
+        total += len(written)
+        print(f"wrote {len(written)} C2A pose scenarios")
 
     if total == 0:
         parser.error(
