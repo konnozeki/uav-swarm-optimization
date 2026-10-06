@@ -5,6 +5,7 @@ import math
 import numpy as np
 
 from .problem import Scenario, Solution
+from .problem import positions_in_forbidden_regions
 from .objectives import (
     ObjectiveConfig,
     DEFAULT_OBJECTIVE,
@@ -28,6 +29,8 @@ class Metrics:
     collision_violations: int
     collision_ratio: float
     min_uav_distance: float
+    forbidden_violations: int
+    forbidden_ratio: float
     complete: bool
     in_bounds: bool
     feasible: bool
@@ -189,6 +192,18 @@ def bounds_violation_ratio(
     return float(np.mean(x_violation + y_violation))
 
 
+def forbidden_region_stats(
+    scenario: Scenario,
+    positions: np.ndarray,
+) -> tuple[int, float]:
+    p = _validated_positions(scenario, positions)
+    if not scenario.forbidden_regions:
+        return 0, 0.0
+
+    violations = int(np.sum(positions_in_forbidden_regions(scenario, p)))
+    return violations, float(violations / len(p))
+
+
 def feasibility_key(metrics: Metrics) -> tuple[int, float, float]:
     """Comparison key for final-solution selection.
 
@@ -234,6 +249,10 @@ def evaluate_positions(
         scenario,
         p,
     )
+    forbidden_violations, forbidden_ratio = forbidden_region_stats(
+        scenario,
+        p,
+    )
 
     complete = len(p) == scenario.n_uavs
     bounds_violation = bounds_violation_ratio(scenario, p)
@@ -244,6 +263,7 @@ def evaluate_positions(
         and in_bounds
         and connected
         and collision_violations == 0
+        and forbidden_violations == 0
     )
 
     missing_uav_ratio = (scenario.n_uavs - len(p)) / scenario.n_uavs
@@ -252,6 +272,7 @@ def evaluate_positions(
         + bounds_violation
         + conn_deficit
         + collision_ratio
+        + forbidden_ratio
     )
 
     fitness = scalar_fitness(
@@ -272,6 +293,8 @@ def evaluate_positions(
         collision_violations=collision_violations,
         collision_ratio=collision_ratio,
         min_uav_distance=min_distance,
+        forbidden_violations=forbidden_violations,
+        forbidden_ratio=forbidden_ratio,
         complete=complete,
         in_bounds=in_bounds,
         feasible=feasible,

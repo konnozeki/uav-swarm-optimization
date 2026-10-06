@@ -3,9 +3,10 @@ from __future__ import annotations
 import time
 import numpy as np
 
-from ..problem import Scenario, Solution
+from ..problem import Scenario, Solution, clip_positions, positions_in_forbidden_regions
 from ..metrics import evaluate_positions
 from ..objectives import ObjectiveConfig, DEFAULT_OBJECTIVE
+from ..static_candidates import static_candidate_points
 
 
 class ConnectedGreedy:
@@ -20,25 +21,7 @@ class ConnectedGreedy:
         self.objective_config = objective_config
 
     def _candidate_points(self, scenario: Scenario) -> np.ndarray:
-        xs = np.linspace(0, scenario.width, self.grid_size)
-        ys = np.linspace(0, scenario.height, self.grid_size)
-        grid = np.array([(x, y) for x in xs for y in ys], dtype=float)
-
-        total_w = float(np.sum(scenario.target_weights))
-        if total_w > 0:
-            centroid = np.average(
-                scenario.targets,
-                axis=0,
-                weights=scenario.target_weights,
-            )
-        else:
-            centroid = np.mean(scenario.targets, axis=0)
-
-        return np.vstack([
-            scenario.targets,
-            grid,
-            centroid[None, :],
-        ])
+        return static_candidate_points(scenario, self.grid_size)
 
     def solve(self, scenario: Scenario, seed: int = 0) -> tuple[Solution, float]:
         # The algorithm is deterministic; seed is kept for a common benchmark API.
@@ -57,7 +40,8 @@ class ConnectedGreedy:
         else:
             first = np.mean(scenario.targets, axis=0)
 
-        positions = [np.asarray(first, dtype=float)]
+        first = clip_positions(np.asarray(first, dtype=float)[None, :], scenario)[0]
+        positions = [first]
 
         while len(positions) < scenario.n_uavs:
             current = np.asarray(positions)
@@ -105,7 +89,15 @@ class ConnectedGreedy:
                     fallback_d <= scenario.communication_radius + 1e-9,
                     axis=1,
                 )
-                valid = valid[fallback_safe & fallback_connected]
+                fallback_allowed = ~positions_in_forbidden_regions(
+                    scenario,
+                    valid,
+                )
+                valid = valid[
+                    fallback_safe
+                    & fallback_connected
+                    & fallback_allowed
+                ]
 
             if len(valid) == 0:
                 raise RuntimeError(

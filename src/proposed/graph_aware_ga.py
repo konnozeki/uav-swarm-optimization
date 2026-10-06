@@ -62,10 +62,10 @@ class GraphAwareGA:
             self.name = name
 
     def _random_individual(self, scenario, rng):
-        return np.column_stack([
+        return clip_positions(np.column_stack([
             rng.uniform(0, scenario.width, scenario.n_uavs),
             rng.uniform(0, scenario.height, scenario.n_uavs),
-        ])
+        ]), scenario)
 
     def _repair(self, positions, scenario):
         return repair_solution(

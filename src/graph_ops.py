@@ -28,7 +28,8 @@ def communication_graph_from_positions(
 
     for i in range(n):
         for j in range(i + 1, n):
-            if d[i, j] <= communication_radius:
+            # Match the 1e-9 boundary tolerance of trajectory certificates.
+            if d[i, j] <= communication_radius + 1e-9:
                 g.add_edge(i, j, distance=float(d[i, j]))
 
     return g

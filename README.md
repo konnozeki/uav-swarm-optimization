@@ -1,350 +1,133 @@
-# UAV Swarm Optimization — Checkpoint 02
+# Static UAV Coverage with Connectivity Constraints
 
-Checkpoint này KHÔNG ghi đè Checkpoint 01.
+This branch now focuses on one report-sized problem:
 
-Mục tiêu là giữ storyline phát triển:
+> Place a static swarm of UAVs to maximize weighted target coverage while preserving hard communication connectivity and minimum separation.
 
-```text
-Checkpoint 01
-model + metrics + toy baselines
-        |
-        v
-Checkpoint 02
-stronger baselines + graph-aware GA + ablation + statistics
-```
+The main SOTA/report suite remains a clean static target-point benchmark. Small
+obstacle and realtime mobility variants are available as explicit opt-in
+experiments so they do not change the report numbers by accident.
 
-## 1. Cài trên Windows
+## Algorithms kept
 
-PowerShell:
+- `cfg_ls`: proposed Connected Frontier Greedy + topology-safe Leaf-Swap local search.
+- `cfg`: ablation of the proposed method without Leaf-Swap.
+- `graph_ga`: earlier graph-aware genetic algorithm baseline.
+- `greedy`: connected greedy baseline.
+- `jocc_cpgs`, `jocc_dpgs`: literature-inspired JOCC adapters for the common 2D target-point model.
+- `exact_milp`: exact oracle for small discrete instances, using the same candidate set as CFG-LS.
 
-```powershell
-py -m venv .venv
-.venv\Scripts\activate
-python -m pip install -r requirements.txt
-```
-
-## 2. Chạy demo
+## Install
 
 ```powershell
-python run_demo.py
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
 ```
 
-Demo so:
-- Vanilla GA
-- GraphAwareGA
-
-trên một scenario hai cụm target, nơi connectivity dễ trở thành nút thắt.
-
-Ảnh được lưu vào:
-
-```text
-outputs/demo/
-```
-
-## 3. Benchmark nhanh
+## Quick benchmark
 
 ```powershell
-python run_benchmark.py --profile quick --seeds 5
+python run_static_coverage_study.py --seeds 20 --output-dir outputs/static_coverage_study
 ```
 
-Các algorithm mặc định:
-
-```text
-random
-greedy
-ga
-pso
-nsga2
-graph_ga
-```
-
-Kết quả:
-
-```text
-outputs/benchmark_quick/
-    results.csv
-    summary.csv
-    figures/
-```
-
-## 4. Benchmark connectivity stress
+Obstacle-aware static variant:
 
 ```powershell
-python run_benchmark.py --profile stress --seeds 10
+python run_static_coverage_study.py --seeds 5 --obstacles blocks --output-dir outputs/static_obstacles
 ```
 
-Profile này thay đổi communication radius và số UAV để ép connectivity trở thành
-bottleneck.
+## Full report suite
 
-## 5. Full sweep
+Smoke:
 
 ```powershell
-python run_benchmark.py --profile full --seeds 20
+python run_static_sota_suite.py --profile smoke
 ```
 
-LƯU Ý: full profile rất lớn. Nó được tạo để chạy benchmark thật, không phải smoke test.
-
-## 6. Ablation
+Report:
 
 ```powershell
-python run_ablation.py --seeds 10
+python run_static_sota_suite.py --profile report --output-dir outputs/static_sota_report
 ```
 
-So sánh:
-
-```text
-graph_ga_full
-graph_ga_no_articulation
-graph_ga_no_connectivity_repair
-graph_ga_no_guided
-graph_ga_no_redundancy_mutation
-graph_ga_no_redundancy_objective
-vanilla_ga
-```
-
-## 7. Statistical test
-
-Sau benchmark:
+Large SOTA run with hundreds of clean, hard, obstacle, and scalability cases:
 
 ```powershell
-python run_stats.py outputs/benchmark_quick/results.csv
+python run_static_sota_suite.py --profile extended --skip-exact --output-dir outputs/static_sota_extended
 ```
 
-Hoặc sau ablation:
+The report suite evaluates main quality, hard generated cases, obstacle/no-deploy cases, UAV scalability, target scalability, communication-radius stress, CFG/CFG-LS ablation, paired Wilcoxon tests, and small-instance optimality gaps against MILP. The extended profile uses `main_static=600`, `hard_static=400`, and `obstacle_static=300` deterministic scenarios, plus scalability sweeps.
+
+## External Datasets
+
+Three external case families are supported through a local conversion step:
+
+- `osm_poi`: POI/demand points from an OSM-style CSV, with optional no-deploy obstacles.
+- `opencellid`: cell-tower or cellular infrastructure points from an OpenCellID-style CSV.
+- `mobility`: mobility demand points from a trajectory CSV or GeoLife `.plt` directory.
+
+The converter expects local raw files and writes frozen scenario JSON files:
+
+Download/stage raw data first:
 
 ```powershell
-python run_stats.py outputs/ablation/results.csv --proposed graph_ga_full
+python download_external_raw.py `
+  --bbox 21.000,105.780,21.060,105.860 `
+  --download-geolife `
+  --output-dir data/external_raw
 ```
 
-## 8. Objective
-
-Fitness scalar dùng cho Random / Greedy / GA / PSO / GraphAwareGA:
-
-```text
-fitness
-= weighted_coverage
-- redundancy_weight * redundancy_excess
-- connectivity_weight * connectivity_deficit
-- collision_weight * collision_ratio
-```
-
-NSGA-II không gộp các thành phần này ngay từ đầu. Nó tối ưu bốn mục tiêu riêng:
-
-```text
-maximize weighted coverage
-minimize redundancy
-minimize connectivity deficit
-minimize collision ratio
-```
-
-Sau khi có Pareto front, code chọn nghiệm có scalar fitness tốt nhất để tiện benchmark
-chung với các thuật toán khác.
-
-## 9. GraphAwareGA hoạt động thế nào?
-
-```text
-population
-   |
-selection
-   |
-articulation-preserving crossover
-   |
-articulation-aware + coverage-guided mutation
-   |
-connectivity repair
-   |
-collision repair
-   |
-evaluate
-```
-
-### Articulation-aware mutation
-
-Nếu UAV là articulation point của communication graph, mutation probability và step
-size bị giảm.
-
-Nếu UAV đang tạo nhiều sensing redundancy và không phải articulation point, nó được
-phép mutation mạnh hơn.
-
-### Coverage-guided mutation
-
-Một số mutation không đi ngẫu nhiên mà hướng tới target chưa được phủ.
-
-### Connectivity repair
-
-Nếu graph bị tách thành nhiều component, thuật toán cố dịch chuyển nguyên một component
-về phía component gần nhất. Dịch chuyển cả component giúp giữ cấu trúc liên kết nội bộ
-tốt hơn việc kéo một UAV đơn lẻ.
-
-### Collision repair
-
-Các cặp UAV quá gần bị đẩy ra xa nhau, sau đó connectivity được repair lại.
-
-## 10. Correctness tests
+OpenCellID bulk files usually require an account/API token. Download a CSV from
+`https://opencellid.org/downloads` and stage it with:
 
 ```powershell
-python -m pip install -r requirements-dev.txt
+python download_external_raw.py `
+  --skip-osm `
+  --opencellid-csv path/to/cell_towers.csv `
+  --output-dir data/external_raw
+```
+
+Then convert the raw data:
+
+```powershell
+python prepare_external_datasets.py `
+  --osm-poi data/external_raw/osm_poi.csv `
+  --osm-obstacles data/external_raw/osm_obstacles.csv `
+  --opencellid data/external_raw/opencellid.csv `
+  --mobility-csv data/external_raw/mobility.csv `
+  --geolife-dir data/external_raw/Geolife `
+  --cases 10 `
+  --targets-per-case 120 `
+  --output-dir datasets/external_scenarios
+```
+
+Run SOTA on those frozen external cases separately from the generated benchmark:
+
+```powershell
+python run_static_sota_suite.py --profile smoke --skip-main --skip-exact --skip-hard --skip-obstacles --skip-sweeps --external-scenarios datasets/external_scenarios --output-dir outputs/static_sota_external
+```
+
+## Realtime Mobility Demo
+
+Moving target nodes are visualized in a separate demo runner. Each frame updates
+the target nodes along mixed circular, oscillating, figure-eight, and patrol-like
+trajectories, then replans the static deployment for visual inspection.
+
+```powershell
+python run_realtime_mobility_demo.py --frames 80 --output outputs/realtime_mobility_demo.gif
+```
+
+## Tests
+
+```powershell
 python -m pytest -q
 ```
 
-Final solutions now expose `complete`, `in_bounds`, `feasible`, and
-`constraint_violation` metrics. GraphAwareGA uses feasibility-first final output
-selection while keeping the internal evolutionary selection based on the original
-scalar fitness for a cleaner comparison.
+## Scope Boundaries
 
-## 11. Cấu trúc project
-
-```text
-checkpoint_02_graph_aware/
-├─ CHECKPOINT.md
-├─ README.md
-├─ requirements.txt
-├─ requirements-dev.txt
-├─ tests/
-├─ run_demo.py
-├─ run_benchmark.py
-├─ run_ablation.py
-├─ run_stats.py
-└─ src/
-   ├─ problem.py
-   ├─ objectives.py
-   ├─ metrics.py
-   ├─ graph_ops.py
-   ├─ repair.py
-   ├─ scenarios.py
-   ├─ visualization.py
-   ├─ baselines/
-   │  ├─ random_search.py
-   │  ├─ greedy.py
-   │  ├─ vanilla_ga.py
-   │  ├─ pso.py
-   │  └─ nsga2.py
-   ├─ proposed/
-   │  └─ graph_aware_ga.py
-   └─ experiments/
-      ├─ configs.py
-      ├─ benchmark.py
-      ├─ ablation.py
-      └─ statistics.py
-```
-
-
-## Checkpoint 03 — Formation transition
-
-Nhánh này bắt đầu Checkpoint 03 nhưng vẫn giữ nguyên code Checkpoint 02.
-
-Khác với giả định deployment từ một base cố định, CP3 định nghĩa bài toán tổng quát:
-
-    formation A -> formation B
-
-và tối ưu thời gian chuyển formation dưới các ràng buộc:
-
-- giới hạn tốc độ;
-- collision avoidance trong cả đoạn chuyển động, không chỉ ở endpoint;
-- communication connectivity trong toàn bộ transition;
-- map bounds.
-
-Thiết kế và formulation đầy đủ nằm trong CHECKPOINT_03.md.
-
-Chạy benchmark nhanh:
-
-    python run_transition_benchmark.py --profile quick
-
-Chạy connectivity-stress profile:
-
-    python run_transition_benchmark.py --profile stress
-
-Proposed planner hiện tại là BackboneTransitionPlanner. Mỗi transition segment bảo vệ một maximum-slack spanning tree, nhờ đó có certificate connectivity liên tục trong segment.
-
-
-Joint formation + transition benchmark:
-
-    python run_reconfiguration_benchmark.py --profile quick --seeds 3
-    python run_reconfiguration_benchmark.py --profile stress --seeds 5
-
-Paired statistics:
-
-    python run_reconfiguration_stats.py outputs/reconfiguration_quick/results.csv
-
-The main comparison is now:
-
-    StaticThenTransition
-        CP2 optimizes B without seeing deployment cost
-
-    TransitionAwareGA
-        CP2 graph-aware operators + exact A -> B transition cost in selection
-
-
-### CP3 visualization
-
-Interactive browser visualization:
-
-    python run_visualize_reconfiguration.py --profile quick --problem-index 2 --algorithm both --budget quick --seed 0
-
-Dense showcase:
-
-    python run_visualize_reconfiguration.py --profile showcase --algorithm aware --budget standard --seed 0 --subframes 10 --frame-ms 60
-
-The default output is a self-contained Plotly HTML plus a static PNG. The HTML
-supports play/pause, a time slider, zoom, pan and hover. Add `--gif` only when a
-GIF is useful for slides.
-
-The final TransitionAwareGA prototype uses coverage-first hierarchical selection:
-
-    feasible transition
-    > weighted sensing coverage bucket
-    > final CP2 static fitness bucket
-    > shorter formation time
-    > shorter total travel
-    > exact sensing quality
-
-This avoids sacrificing reachable sensing coverage merely to save a small amount
-of transition time. The buckets deliberately let transition cost choose only
-between near-tied formations. CP3 also disables CP2 articulation protection by
-default so relay UAVs remain movable; connectivity is enforced by repair and the
-transition planner.
-
-Each frame shows:
-
-- formation A and assigned formation B;
-- current UAV positions and trajectory trails;
-- current communication graph;
-- protected backbone edges when available;
-- rectangular no-fly obstacles;
-- target points and currently covered targets;
-- elapsed time, connectivity state and minimum UAV separation.
-
-Outputs are written to:
-
-    outputs/visualization/
-
-
-### Obstacle-aware showcase
-
-The CP3 showcase includes three static rectangular no-fly regions. The proposed
-planner routes UAVs around them with a small visibility graph while continuing
-to enforce communication connectivity and UAV-UAV separation.
-
-    python run_visualize_reconfiguration.py --profile showcase --algorithm aware --budget standard --seed 0 --subframes 10 --frame-ms 60
-
-Each command performs exactly one GA run. For the showcase visualization,
-`standard` uses a larger population and refines several distinct finalists from
-that same population to reduce seed sensitivity without restarting the solver.
-
-Obstacle geometry is implemented with NumPy/basic geometry only; Plotly is used
-only for the interactive browser visualization.
-
-
-### Manual formation editor
-
-Every interactive CP3 HTML now includes an **Edit B** mode.
-
-1. Open the generated HTML.
-2. Click **Edit B**.
-3. Drag any numbered formation-B UAV node.
-4. Coverage, smooth coverage potential, static fitness, communication connectivity, component count, minimum separation, collision count, obstacle feasibility, direct travel and straight-line time lower bound update live.
-5. Click **Copy state** to copy the edited coordinates and metrics as JSON.
-
-The editor is browser-side and intended for diagnosis/demo. It recomputes static formation metrics exactly, but it does not rerun the Python obstacle-aware transition planner. `directTravel` and `timeLB` are therefore straight-line estimates for the edited destination. Rerun the optimizer/planner when an exact transition trajectory is needed.
-
-Entering Edit B hides the old trajectory/backbone because those paths belonged to the optimizer's original destination and would be misleading after manual editing.
+Forbidden regions are currently hard no-deploy regions for UAV positions. They
+do not yet model raster maps, line-of-sight radio shadowing, path planning,
+trajectory safety, online replanning, or AirSim/PX4 execution. The SOTA runner
+does not include moving nodes; use `run_realtime_mobility_demo.py` for realtime
+visual stress cases.

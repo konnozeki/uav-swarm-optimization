@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from src.metrics import evaluate, evaluate_positions
-from src.problem import Solution
+from src.problem import ForbiddenRegion, Scenario, Solution
 
 
 def test_partial_placement_is_allowed_but_not_feasible(simple_scenario):
@@ -41,3 +41,28 @@ def test_full_connected_collision_free_placement_is_feasible(simple_scenario):
     assert metrics.collision_violations == 0
     assert metrics.feasible
     assert metrics.constraint_violation == 0.0
+
+
+def test_position_inside_forbidden_region_is_infeasible():
+    scenario = Scenario(
+        name="forbidden",
+        pattern="test",
+        width=300.0,
+        height=300.0,
+        targets=np.array([[150.0, 150.0]]),
+        target_weights=np.ones(1),
+        n_uavs=1,
+        sensing_radius=60.0,
+        communication_radius=100.0,
+        min_separation=0.0,
+        forbidden_regions=(
+            ForbiddenRegion.circle("disc", 150.0, 150.0, 40.0),
+        ),
+    )
+
+    metrics = evaluate_positions(scenario, np.array([[150.0, 150.0]]))
+
+    assert metrics.forbidden_violations == 1
+    assert metrics.forbidden_ratio == 1.0
+    assert not metrics.feasible
+    assert metrics.constraint_violation >= 1.0
