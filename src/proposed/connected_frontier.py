@@ -26,6 +26,9 @@ class ConnectedFrontierConfig:
     local_rounds: int = 12
     potential_decay_factor: float = 0.75
     multi_start_roots: int = 5
+    lookahead_depth: int = 2
+    lookahead_branch: int = 4
+    lookahead_beam: int = 2
 
 
 class ConnectedFrontierLeafSwap:
@@ -55,6 +58,12 @@ class ConnectedFrontierLeafSwap:
             raise ValueError("potential_decay_factor must be positive")
         if config.multi_start_roots < 1:
             raise ValueError("multi_start_roots must be at least 1")
+        if config.lookahead_depth < 1:
+            raise ValueError("lookahead_depth must be at least 1")
+        if config.lookahead_branch < 1:
+            raise ValueError("lookahead_branch must be at least 1")
+        if config.lookahead_beam < 1:
+            raise ValueError("lookahead_beam must be at least 1")
         self.config = config
 
     @staticmethod
@@ -149,6 +158,247 @@ class ConnectedFrontierLeafSwap:
             + self.config.potential_weight * smooth
         )
         return coverage, secondary
+
+    def _valid_next_mask(
+        self,
+        scenario: Scenario,
+        points: np.ndarray,
+        selected: list[int],
+        pair_distance: np.ndarray,
+        communication: np.ndarray,
+    ) -> np.ndarray:
+        selected_array = np.asarray(selected, dtype=int)
+        distances = pair_distance[:, selected_array]
+        safe = np.all(
+            distances >= scenario.min_separation - 1e-9,
+            axis=1,
+        )
+        connected = np.any(
+            communication[:, selected_array],
+            axis=1,
+        )
+        unused = np.ones(len(points), dtype=bool)
+        unused[selected_array] = False
+        return safe & connected & unused
+
+    def _immediate_scores(
+        self,
+        scenario: Scenario,
+        selected: list[int],
+        counts: np.ndarray,
+        current_potential: np.ndarray,
+        data: dict,
+        weights: np.ndarray,
+    ) -> np.ndarray:
+        covers = data["covers"]
+        potential = data["potential"]
+        pair_distance = data["pair_distance"]
+        communication = data["communication"]
+        total = max(float(np.sum(weights)), 1e-12)
+        selected_array = np.asarray(selected, dtype=int)
+
+        uncovered = counts == 0
+        marginal = (
+            covers[:, uncovered] @ weights[uncovered]
+            / total
+        )
+
+        already_covered = counts > 0
+        redundancy_increment = (
+            covers[:, already_covered] @ weights[already_covered]
+            / total
+        )
+
+        improved_potential = np.maximum(
+            potential,
+            current_potential[None, :],
+        )
+        potential_gain = (
+            (improved_potential - current_potential[None, :])
+            @ weights
+            / total
+        )
+
+        distances = pair_distance[:, selected_array]
+        within = communication[:, selected_array]
+        slack = np.maximum(
+            scenario.communication_radius - distances,
+            0.0,
+        ) / max(scenario.communication_radius, 1e-12)
+        robust_link = np.max(
+            np.where(within, slack, 0.0),
+            axis=1,
+        )
+
+        return (
+            marginal
+            + self.config.potential_weight * potential_gain
+            - self.config.redundancy_weight * redundancy_increment
+            + self.config.connectivity_bonus * robust_link
+        )
+
+    def _choose_next_with_lookahead(
+        self,
+        scenario: Scenario,
+        points: np.ndarray,
+        data: dict,
+        selected: list[int],
+        counts: np.ndarray,
+        current_potential: np.ndarray,
+        weights: np.ndarray,
+    ) -> int:
+        covers = data["covers"]
+        potential = data["potential"]
+        pair_distance = data["pair_distance"]
+        communication = data["communication"]
+
+        valid = self._valid_next_mask(
+            scenario,
+            points,
+            selected,
+            pair_distance,
+            communication,
+        )
+        if not np.any(valid):
+            raise RuntimeError(
+                "ConnectedFrontierLeafSwap could not extend the "
+                "connected frontier; increase grid_size or communication radius"
+            )
+
+        score = self._immediate_scores(
+            scenario,
+            selected,
+            counts,
+            current_potential,
+            data,
+            weights,
+        )
+        score[~valid] = -np.inf
+
+        if self.config.lookahead_depth == 1 or len(selected) + 1 >= scenario.n_uavs:
+            return int(np.argmax(score))
+
+        valid_ids = np.flatnonzero(valid)
+        branch_count = min(self.config.lookahead_branch, len(valid_ids))
+        ordered = valid_ids[np.argsort(score[valid_ids])[-branch_count:][::-1]]
+
+        beam = []
+        for candidate_id in ordered:
+            cid = int(candidate_id)
+            next_selected = selected + [cid]
+            next_counts = counts + covers[cid].astype(int)
+            next_potential = np.maximum(
+                current_potential,
+                potential[cid],
+            )
+            beam.append(
+                (
+                    next_selected,
+                    next_counts,
+                    next_potential,
+                    cid,
+                )
+            )
+
+        remaining_depth = min(
+            self.config.lookahead_depth - 1,
+            scenario.n_uavs - len(selected) - 1,
+        )
+        for _ in range(remaining_depth):
+            expanded = []
+            for state_selected, state_counts, state_potential, first_id in beam:
+                if len(state_selected) >= scenario.n_uavs:
+                    expanded.append(
+                        (
+                            self._solution_key(
+                                covers,
+                                potential,
+                                state_selected,
+                                weights,
+                            ),
+                            state_selected,
+                            state_counts,
+                            state_potential,
+                            first_id,
+                        )
+                    )
+                    continue
+
+                state_valid = self._valid_next_mask(
+                    scenario,
+                    points,
+                    state_selected,
+                    pair_distance,
+                    communication,
+                )
+                if not np.any(state_valid):
+                    continue
+
+                state_score = self._immediate_scores(
+                    scenario,
+                    state_selected,
+                    state_counts,
+                    state_potential,
+                    data,
+                    weights,
+                )
+                state_score[~state_valid] = -np.inf
+                state_valid_ids = np.flatnonzero(state_valid)
+                state_branch_count = min(
+                    self.config.lookahead_branch,
+                    len(state_valid_ids),
+                )
+                state_ordered = state_valid_ids[
+                    np.argsort(state_score[state_valid_ids])[-state_branch_count:][::-1]
+                ]
+
+                for candidate_id in state_ordered:
+                    cid = int(candidate_id)
+                    next_selected = state_selected + [cid]
+                    next_counts = state_counts + covers[cid].astype(int)
+                    next_potential = np.maximum(
+                        state_potential,
+                        potential[cid],
+                    )
+                    expanded.append(
+                        (
+                            self._solution_key(
+                                covers,
+                                potential,
+                                next_selected,
+                                weights,
+                            ),
+                            next_selected,
+                            next_counts,
+                            next_potential,
+                            first_id,
+                        )
+                    )
+
+            if not expanded:
+                break
+
+            expanded.sort(key=lambda item: item[0], reverse=True)
+            beam = [
+                (state_selected, state_counts, state_potential, first_id)
+                for _, state_selected, state_counts, state_potential, first_id
+                in expanded[: self.config.lookahead_beam]
+            ]
+
+        ranked = [
+            (
+                self._solution_key(
+                    covers,
+                    potential,
+                    state_selected,
+                    weights,
+                ),
+                first_id,
+            )
+            for state_selected, _, _, first_id in beam
+        ]
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return int(ranked[0][1])
 
     def _root_candidates(
         self,
@@ -254,10 +504,7 @@ class ConnectedFrontierLeafSwap:
     ) -> list[int]:
         covers = data["covers"]
         potential = data["potential"]
-        pair_distance = data["pair_distance"]
-        communication = data["communication"]
         weights = self._weights(scenario)
-        total = max(float(np.sum(weights)), 1e-12)
 
         seed = int(root)
         selected = [seed]
@@ -266,68 +513,15 @@ class ConnectedFrontierLeafSwap:
         current_potential = potential[seed].copy()
 
         while len(selected) < scenario.n_uavs:
-            selected_array = np.asarray(selected, dtype=int)
-            distances = pair_distance[:, selected_array]
-
-            safe = np.all(
-                distances >= scenario.min_separation - 1e-9,
-                axis=1,
+            choice = self._choose_next_with_lookahead(
+                scenario,
+                points,
+                data,
+                selected,
+                counts,
+                current_potential,
+                weights,
             )
-            connected = np.any(
-                communication[:, selected_array],
-                axis=1,
-            )
-            unused = np.ones(len(points), dtype=bool)
-            unused[selected_array] = False
-            valid = safe & connected & unused
-
-            if not np.any(valid):
-                raise RuntimeError(
-                    "ConnectedFrontierLeafSwap could not extend the "
-                    "connected frontier; increase grid_size or communication radius"
-                )
-
-            uncovered = counts == 0
-            marginal = (
-                covers[:, uncovered] @ weights[uncovered]
-                / total
-            )
-
-            already_covered = counts > 0
-            redundancy_increment = (
-                covers[:, already_covered] @ weights[already_covered]
-                / total
-            )
-
-            improved_potential = np.maximum(
-                potential,
-                current_potential[None, :],
-            )
-            potential_gain = (
-                (improved_potential - current_potential[None, :])
-                @ weights
-                / total
-            )
-
-            # Robustness is only a tie-scale bonus: coverage remains dominant.
-            within = communication[:, selected_array]
-            slack = np.maximum(
-                scenario.communication_radius - distances,
-                0.0,
-            ) / max(scenario.communication_radius, 1e-12)
-            robust_link = np.max(
-                np.where(within, slack, 0.0),
-                axis=1,
-            )
-
-            score = (
-                marginal
-                + self.config.potential_weight * potential_gain
-                - self.config.redundancy_weight * redundancy_increment
-                + self.config.connectivity_bonus * robust_link
-            )
-            score[~valid] = -np.inf
-            choice = int(np.argmax(score))
 
             selected.append(choice)
             counts += covers[choice].astype(int)

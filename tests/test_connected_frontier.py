@@ -104,6 +104,7 @@ def test_multi_start_improves_centroid_gap_case_for_cfg():
             grid_size=12,
             local_rounds=0,
             multi_start_roots=1,
+            lookahead_depth=1,
         )
     ).solve(s)
     multi_start, _ = ConnectedFrontierLeafSwap(
@@ -122,4 +123,60 @@ def test_multi_start_improves_centroid_gap_case_for_cfg():
     assert (
         multi_start_metrics.weighted_coverage_ratio
         > centroid_metrics.weighted_coverage_ratio
+    )
+
+
+def test_lookahead_accepts_relay_steps_for_future_coverage():
+    rng = np.random.default_rng(2)
+    targets = []
+    weights = []
+    for center, count, weight in (
+        (np.array([120.0, 500.0]), 20, 1.0),
+        (np.array([880.0, 500.0]), 20, 1.5),
+        (np.array([500.0, 200.0]), 8, 0.2),
+    ):
+        targets.extend(center + rng.normal(0.0, 35.0, size=(count, 2)))
+        weights.extend([weight] * count)
+    targets = np.clip(np.asarray(targets, dtype=float), 0.0, 1000.0)
+    s = Scenario(
+        name="relay_lookahead",
+        pattern="relay_lookahead",
+        width=1000.0,
+        height=1000.0,
+        targets=targets,
+        target_weights=np.asarray(weights, dtype=float),
+        n_uavs=5,
+        sensing_radius=115.0,
+        communication_radius=230.0,
+        min_separation=25.0,
+        seed=2,
+    )
+
+    greedy_construct, _ = ConnectedFrontierLeafSwap(
+        ConnectedFrontierConfig(
+            grid_size=16,
+            local_rounds=0,
+            multi_start_roots=1,
+            lookahead_depth=1,
+        )
+    ).solve(s)
+    lookahead_construct, _ = ConnectedFrontierLeafSwap(
+        ConnectedFrontierConfig(
+            grid_size=16,
+            local_rounds=0,
+            multi_start_roots=1,
+            lookahead_depth=2,
+            lookahead_branch=4,
+            lookahead_beam=2,
+        )
+    ).solve(s)
+
+    greedy_metrics = evaluate(s, greedy_construct)
+    lookahead_metrics = evaluate(s, lookahead_construct)
+
+    assert greedy_metrics.feasible
+    assert lookahead_metrics.feasible
+    assert (
+        lookahead_metrics.weighted_coverage_ratio
+        > greedy_metrics.weighted_coverage_ratio + 0.05
     )
